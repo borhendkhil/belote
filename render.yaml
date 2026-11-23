@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: bellote-server
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    numInstances: 1
+    envVars:
+      - key: PORT
+        value: 10000

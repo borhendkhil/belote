@@ -1,0 +1,14 @@
+name: bellote_engine
+description: Moteur de règles pour la belote contrée tunisienne (variante fictive).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ">=3.6.0 <4.0.0"
+
+dependencies:
+  meta: ^1.12.0
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0

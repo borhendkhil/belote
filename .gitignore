@@ -1,0 +1,25 @@
+# Dart / Flutter
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+*.lock.bak
+
+# Flutter generated platform files that can be regenerated
+apps/bellote_app/.flutter-plugins
+apps/bellote_app/.flutter-plugins-dependencies
+apps/bellote_app/.metadata
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+
+# Local env
+*.env
+apps/bellote_app/android/local.properties
