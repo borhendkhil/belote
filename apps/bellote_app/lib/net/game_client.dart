@@ -52,6 +52,23 @@ class GameClient extends ChangeNotifier {
   String? code;
   String? token;
 
+  /// Échéance du tour en cours, convertie sur l'horloge du téléphone.
+  DateTime? turnDeadline;
+
+  /// Durée totale allouée au tour (45 s pour un humain, 900 ms pour un bot).
+  Duration? turnDuration;
+
+  /// Décalage entre l'horloge du serveur et celle de l'appareil.
+  int _clockOffsetMs = 0;
+
+  /// Temps restant avant la fin du tour, ou null s'il n'y a pas d'échéance.
+  Duration? get turnRemaining {
+    final deadline = turnDeadline;
+    if (deadline == null) return null;
+    final remaining = deadline.difference(DateTime.now());
+    return remaining.isNegative ? Duration.zero : remaining;
+  }
+
   String? errorCode;
   String? errorMessage;
   int errorNonce = 0;
@@ -249,6 +266,7 @@ class GameClient extends ChangeNotifier {
       room = RoomInfo.fromJson(Map<String, dynamic>.from(rawRoom));
       chat = room!.chat;
     }
+    _applyTurnClock(message);
     final rawView = message['view'];
     if (rawView is Map) {
       view = PlayerView.fromJson(Map<String, dynamic>.from(rawView));
@@ -261,6 +279,21 @@ class GameClient extends ChangeNotifier {
       stage = ClientStage.inLobby;
     }
     notifyListeners();
+  }
+
+  /// Convertit l'échéance serveur en heure locale pour que la montre reste
+  /// juste même si le téléphone n'est pas à l'heure du serveur.
+  void _applyTurnClock(Map<String, dynamic> message) {
+    final serverTime = message['serverTime'];
+    if (serverTime is int) {
+      _clockOffsetMs = serverTime - DateTime.now().millisecondsSinceEpoch;
+    }
+    final deadline = message['turnDeadline'];
+    turnDeadline = deadline is int
+        ? DateTime.fromMillisecondsSinceEpoch(deadline - _clockOffsetMs)
+        : null;
+    final duration = message['turnDurationMs'];
+    turnDuration = duration is int ? Duration(milliseconds: duration) : null;
   }
 
   void _handleChat(Map<String, dynamic> message) {
@@ -437,17 +470,8 @@ class GameClient extends ChangeNotifier {
     _send({'type': 'surcounter'});
   }
 
-  Future<void> play(
-    Card card, {
-    bool belote = false,
-    bool rebelote = false,
-  }) async {
-    _send({
-      'type': 'play',
-      'card': card.id,
-      'belote': belote,
-      'rebelote': rebelote,
-    });
+  Future<void> play(Card card, {bool belote = false}) async {
+    _send({'type': 'play', 'card': card.id, 'belote': belote});
   }
 
   Future<void> sendChat(String text) async {
@@ -478,6 +502,8 @@ class GameClient extends ChangeNotifier {
     seat = null;
     code = null;
     token = null;
+    turnDeadline = null;
+    turnDuration = null;
     chat = [];
     notices.clear();
     errorCode = null;

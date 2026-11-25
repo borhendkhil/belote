@@ -199,6 +199,30 @@ class Deal {
   static bool anyHandNeedsRedeal(Map<int, List<Card>> hands) =>
       hands.values.any(handNeedsRedeal);
 
+  /// Total des points d'une main, avec les valeurs hors atout.
+  ///
+  /// L'atout n'étant pas encore connu à la distribution, c'est la seule
+  /// valeur « neutre » possible (A=11, 10=10, R=4, D=3, V=2, 9/8/7=0).
+  static int handPoints(List<Card> hand) =>
+      hand.fold(0, (sum, card) => sum + plainPoints[card.rank]!);
+
+  /// Vrai si une main vaut strictement plus de [limit] points.
+  static bool handPointsAbove(List<Card> hand, int limit) =>
+      handPoints(hand) > limit;
+
+  static bool anyHandPointsAbove(Map<int, List<Card>> hands, int limit) =>
+      hands.values.any((hand) => handPointsAbove(hand, limit));
+
+  /// Valeur de la main la plus lourde de la distribution.
+  static int heaviestHandPoints(Map<int, List<Card>> hands) {
+    var max = 0;
+    for (final hand in hands.values) {
+      final points = handPoints(hand);
+      if (points > max) max = points;
+    }
+    return max;
+  }
+
   // ---------------------------------------------------------------------------
   // Enchères
   // ---------------------------------------------------------------------------
@@ -264,19 +288,7 @@ class Deal {
       belote != null &&
       belote!.canStillDeclareFirst(seat);
 
-  bool canDeclareRebelote(int seat) =>
-      phase == DealPhase.playing &&
-      belote != null &&
-      belote!.declaredFirst[seat] == true &&
-      belote!.completed[seat] != true &&
-      _hands[seat]!.any((card) => belote!.isBeloteCard(seat, card));
-
-  void playCard(
-    int seat,
-    Card card, {
-    bool declareBelote = false,
-    bool declareRebelote = false,
-  }) {
+  void playCard(int seat, Card card, {bool declareBelote = false}) {
     if (phase != DealPhase.playing) {
       throw const RuleViolation('not_playing_phase');
     }
@@ -297,18 +309,16 @@ class Deal {
 
     hand.remove(card);
 
-    if (declareBelote && belote!.canDeclareFirst(seat, card)) {
-      log.add('belote', {'seat': seat});
-    }
-    if (declareRebelote && belote!.canDeclareRebelote(seat, card)) {
-      log.add('rebelote', {'seat': seat});
-    }
-    belote!.onCardPlayed(
-      seat,
-      card,
-      declareBelote: declareBelote,
-      declareRebelote: declareRebelote,
-    );
+    // La belote est une décision du joueur, prise une seule fois en jouant le
+    // roi ou la dame d'atout. La rebelote se valide ensuite automatiquement
+    // dès que l'autre carte d'atout est jouée.
+    final declaresBelote =
+        declareBelote && belote != null && belote!.canDeclareFirst(seat, card);
+    final declaresRebelote =
+        belote != null && belote!.canDeclareRebelote(seat, card);
+    if (declaresBelote) log.add('belote', {'seat': seat});
+    if (declaresRebelote) log.add('rebelote', {'seat': seat});
+    belote?.onCardPlayed(seat, card, declareBelote: declaresBelote);
 
     final play = PlayedCard(seat: seat, card: card);
     if (currentPlays.isEmpty) currentLeaderSeat = seat;
@@ -316,8 +326,8 @@ class Deal {
     log.add('play', {
       'seat': seat,
       'card': card.id,
-      'belote': declareBelote && belote!.declaredFirst[seat] == true,
-      'rebelote': declareRebelote && belote!.completed[seat] == true,
+      'belote': declaresBelote,
+      'rebelote': declaresRebelote,
     });
 
     if (currentPlays.length < 4) {

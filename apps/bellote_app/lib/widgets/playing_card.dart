@@ -13,10 +13,10 @@ class PlayingCard extends StatelessWidget {
     this.faceDown = false,
     this.highlighted = false,
     this.dimmed = false,
-    this.raised = false,
     this.isTrump = false,
     this.onTap,
     this.heroTag,
+    this.shadow = 1,
   });
 
   final Card? card;
@@ -24,59 +24,80 @@ class PlayingCard extends StatelessWidget {
   final bool faceDown;
   final bool highlighted;
   final bool dimmed;
-  final bool raised;
 
   /// Teinte dorée appliquée aux cartes de la couleur d'atout.
   final bool isTrump;
   final VoidCallback? onTap;
   final String? heroTag;
 
+  /// Multiplicateur d'ombre : réduit dans l'éventail pour éviter que l'ombre
+  /// d'une carte ne vienne flouter sa voisine.
+  final double shadow;
+
   double get height => width * 1.45;
+
+  /// Désaturation des cartes non jouables : elles restent nettes et lisibles,
+  /// contrairement à une opacité réduite qui les rend floues.
+  static const ColorFilter _inactiveFilter = ColorFilter.matrix(<double>[
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0.2126, 0.7152, 0.0722, 0, 0, //
+    0, 0, 0, 1, 0, //
+  ]);
 
   @override
   Widget build(BuildContext context) {
-    final content = AnimatedOpacity(
-      duration: const Duration(milliseconds: 160),
-      opacity: dimmed ? 0.38 : 1,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        width: width,
-        height: height,
-        transform: Matrix4.translationValues(0, raised ? -10 : 0, 0),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(width * 0.11),
-          boxShadow: [
+    final face = faceDown || card == null
+        ? const _CardBack()
+        : _CardFace(card: card!, width: width, isTrump: isTrump);
+    final content = AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(width * 0.11),
+        boxShadow: [
+          // Halo doré sans décalage : aucun indice de profondeur (Z), seule la
+          // bordure et ce halo signalent une carte jouable.
+          if (highlighted)
             BoxShadow(
-              color: isTrump
-                  ? const Color(0xFFE6C55C).withValues(alpha: 0.32)
-                  : Colors.black.withValues(alpha: highlighted ? 0.45 : 0.28),
-              blurRadius: highlighted ? 16 : (isTrump ? 10 : 8),
-              offset: Offset(0, highlighted ? 7 : 4),
+              color: AppTheme.gold.withValues(alpha: 0.1),
+              blurRadius: 3,
+              spreadRadius: 0,
             ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(width * 0.11),
-            onTap: dimmed ? null : onTap,
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(width * 0.11),
-                border: Border.all(
-                  color: highlighted
-                      ? AppTheme.gold
-                      : isTrump
-                          ? const Color(0xFFD9B94C)
-                          : Colors.black.withValues(alpha: 0.28),
-                  width: highlighted ? 2.2 : (isTrump ? 1.4 : 0.8),
-                ),
+          // L'ombre portée reste identique, même pour une carte levée : elle ne
+          // doit jamais sembler avancer vers le spectateur.
+          BoxShadow(
+            color: isTrump
+                ? const Color(0xFFE6C55C).withValues(alpha: 0.32)
+                : Colors.black.withValues(alpha: 0.28),
+            blurRadius: (isTrump ? 10 : 8) * shadow,
+            offset: Offset(0, 4 * shadow),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(width * 0.11),
+          onTap: dimmed ? null : onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(width * 0.11),
+              border: Border.all(
+                color: highlighted
+                    ? AppTheme.gold
+                    : isTrump
+                        ? const Color(0xFFD9B94C)
+                        : Colors.black.withValues(alpha: 0.28),
+                width: highlighted ? 2.2 : (isTrump ? 1.4 : 0.8),
               ),
-              clipBehavior: Clip.antiAlias,
-              child: faceDown || card == null
-                  ? const _CardBack()
-                  : _CardFace(card: card!, width: width, isTrump: isTrump),
             ),
+            clipBehavior: Clip.antiAlias,
+            child: dimmed
+                ? ColorFiltered(colorFilter: _inactiveFilter, child: face)
+                : face,
           ),
         ),
       ),

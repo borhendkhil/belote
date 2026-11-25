@@ -46,7 +46,6 @@ class PlayerView {
     required this.auctionHistory,
     required this.auctionClosed,
     required this.canDeclareBelote,
-    required this.canDeclareRebelote,
     required this.holdsBelote,
     required this.beloteDeclared,
     required this.beloteCompleted,
@@ -95,7 +94,6 @@ class PlayerView {
   final List<BidRecord> auctionHistory;
   final bool auctionClosed;
   final bool canDeclareBelote;
-  final bool canDeclareRebelote;
   final bool holdsBelote;
   final bool beloteDeclared;
   final bool beloteCompleted;
@@ -168,7 +166,6 @@ class PlayerView {
         ],
         'auctionClosed': auctionClosed,
         'canDeclareBelote': canDeclareBelote,
-        'canDeclareRebelote': canDeclareRebelote,
         'holdsBelote': holdsBelote,
         'beloteDeclared': beloteDeclared,
         'beloteCompleted': beloteCompleted,
@@ -257,7 +254,6 @@ class PlayerView {
       ],
       auctionClosed: json['auctionClosed'] as bool? ?? false,
       canDeclareBelote: json['canDeclareBelote'] as bool? ?? false,
-      canDeclareRebelote: json['canDeclareRebelote'] as bool? ?? false,
       holdsBelote: json['holdsBelote'] as bool? ?? false,
       beloteDeclared: json['beloteDeclared'] as bool? ?? false,
       beloteCompleted: json['beloteCompleted'] as bool? ?? false,

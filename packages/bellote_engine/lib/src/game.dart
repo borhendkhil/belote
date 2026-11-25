@@ -14,6 +14,9 @@ class GameConfig {
     this.format = MatchFormat.bestOf3,
     this.initialDealer,
     this.redealOnSevenOrEightSameSuit = true,
+    this.redealOnHeavyHand = true,
+    this.heavyHandLimit = 12,
+    this.maxHeavyHandRedeals = 40,
     this.earlyStopEnabled = true,
     this.random,
     this.deckFactory,
@@ -22,6 +25,20 @@ class GameConfig {
   final MatchFormat format;
   final int? initialDealer;
   final bool redealOnSevenOrEightSameSuit;
+
+  /// Redistribue tant qu'une main dépasse [heavyHandLimit] points.
+  final bool redealOnHeavyHand;
+
+  /// Seuil de points d'une main (valeurs hors atout) déclenchant une
+  /// redistribution.
+  final int heavyHandLimit;
+
+  /// Nombre maximal de redistributions tentées pour la règle des points.
+  ///
+  /// Avec les valeurs usuelles la quasi-totalité des mains dépasse 12 points :
+  /// on conserve alors la distribution la plus légère rencontrée afin de
+  /// garantir que la partie démarre toujours.
+  final int maxHeavyHandRedeals;
 
   /// Désactivable pour les tests du comptage normal.
   final bool earlyStopEnabled;
@@ -126,10 +143,12 @@ class BelloteGame {
         continue;
       }
 
+      final dealtHands = _applyHeavyHandRedeal(hands);
+
       _dealsStarted++;
       _deal = Deal.start(
         dealerSeat: dealerSeat,
-        hands: hands,
+        hands: dealtHands,
         log: log,
       );
       phase = GamePhase.bidding;
@@ -138,11 +157,41 @@ class BelloteGame {
         'setNumber': setNumber,
         'dealNumber': _dealsStarted,
         'handCounts': {
-          for (final entry in hands.entries) '${entry.key}': entry.value.length,
+          for (final entry in dealtHands.entries)
+            '${entry.key}': entry.value.length,
         },
       });
       return;
     }
+  }
+
+  /// Applique la règle « une main de plus de [GameConfig.heavyHandLimit]
+  /// points est redistribuée ».
+  ///
+  /// La distribution est retirée jusqu'à [GameConfig.maxHeavyHandRedeals]
+  /// fois. Comme presque toutes les mains dépassent le seuil, on garde la
+  /// distribution la plus légère rencontrée plutôt que de bloquer la partie.
+  Map<int, List<Card>> _applyHeavyHandRedeal(Map<int, List<Card>> hands) {
+    if (!config.redealOnHeavyHand || config.deckFactory != null) return hands;
+
+    var best = hands;
+    var bestScore = Deal.heaviestHandPoints(best);
+    if (bestScore <= config.heavyHandLimit) return best;
+
+    for (var attempt = 0; attempt < config.maxHeavyHandRedeals; attempt++) {
+      final candidate = _dealHands();
+      if (config.redealOnSevenOrEightSameSuit &&
+          Deal.anyHandNeedsRedeal(candidate)) {
+        continue;
+      }
+      final score = Deal.heaviestHandPoints(candidate);
+      if (score < bestScore) {
+        best = candidate;
+        bestScore = score;
+      }
+      if (bestScore <= config.heavyHandLimit) break;
+    }
+    return best;
   }
 
   Map<int, List<Card>> _dealHands() {
@@ -191,18 +240,12 @@ class BelloteGame {
     int seat,
     Card card, {
     bool declareBelote = false,
-    bool declareRebelote = false,
   }) {
     if (phase != GamePhase.playing || _deal == null) {
       throw const RuleViolation('not_playing_phase');
     }
 
-    _deal!.playCard(
-      seat,
-      card,
-      declareBelote: declareBelote,
-      declareRebelote: declareRebelote,
-    );
+    _deal!.playCard(seat, card, declareBelote: declareBelote);
 
     if (_deal!.isComplete) {
       _completeDeal(_deal!.result!);
@@ -371,7 +414,6 @@ class BelloteGame {
       auctionHistory: auction?.history ?? const [],
       auctionClosed: auction?.closed ?? false,
       canDeclareBelote: playing && (deal.canDeclareBelote(seat)),
-      canDeclareRebelote: playing && (deal.canDeclareRebelote(seat)),
       holdsBelote: tracker?.holds[seat] == true,
       beloteDeclared: tracker?.declaredFirst[seat] == true,
       beloteCompleted: tracker?.completed[seat] == true,

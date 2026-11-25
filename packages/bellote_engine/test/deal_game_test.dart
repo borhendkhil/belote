@@ -46,6 +46,77 @@ void main() {
       expect(Deal.handNeedsRedeal(hand), isFalse);
     });
 
+    test('total de points d\'une main avec les valeurs hors atout', () {
+      final hand = [
+        Card.parse('AS'),
+        Card.parse('10S'),
+        Card.parse('KH'),
+        Card.parse('QH'),
+        Card.parse('JD'),
+        Card.parse('9D'),
+        Card.parse('8C'),
+        Card.parse('7C'),
+      ];
+      // A=11, 10=10, R=4, D=3, V=2, 9/8/7=0.
+      expect(Deal.handPoints(hand), 30);
+      expect(Deal.handPointsAbove(hand, 12), isTrue);
+      expect(Deal.handPointsAbove(hand, 30), isFalse);
+    });
+
+    test('une main de plus de 12 points déclenche une redistribution', () {
+      final heavy = [
+        ...['AS', '10S', 'AH', '10H', 'AD', '10D', 'AC', '10C'],
+        ...['KS', '9S', 'KH', '9H', 'KD', '9D', 'KC', '9C'],
+        ...['QS', '8S', 'QH', '8H', 'QD', '8D', 'QC', '8C'],
+        ...['JS', '7S', 'JH', '7H', 'JD', '7D', 'JC', '7C'],
+      ];
+      final light = [
+        ...['AS', '7S', 'AH', '7H', 'AD', '7D', 'AC', '7C'],
+        ...['KS', '8S', 'KH', '8H', 'KD', '8D', 'KC', '8C'],
+        ...['QS', '9S', 'QH', '9H', 'QD', '9D', 'QC', '9C'],
+        ...['JS', '10S', 'JH', '10H', 'JD', '10D', 'JC', '10C'],
+      ];
+      var call = 0;
+      final game = BelloteGame(
+        config: GameConfig(
+          initialDealer: 0,
+          deckFactory: () {
+            call++;
+            return [for (final id in call == 1 ? heavy : light) Card.parse(id)];
+          },
+        ),
+      );
+      game.start();
+      // Les decks déterministes ne sont jamais redistribués : on vérifie
+      // simplement que la règle n'empêche pas la donne de démarrer.
+      expect(game.deal, isNotNull);
+      expect(game.deal!.handCounts.values.every((count) => count == 8), isTrue);
+    });
+
+    test('la règle des points garde la distribution la plus légère', () {
+      BelloteGame gameWith(int attempts) => BelloteGame(
+            config: GameConfig(
+              initialDealer: 0,
+              random: Random(11),
+              maxHeavyHandRedeals: attempts,
+            ),
+          )..start();
+
+      int heaviest(BelloteGame game) => Deal.heaviestHandPoints({
+            for (var seat = 0; seat < 4; seat++) seat: game.deal!.handOf(seat),
+          });
+
+      final plain = gameWith(0);
+      final balanced = gameWith(40);
+      // Même graine : la seconde distribution inclut la première et retient
+      // la main la plus légère rencontrée.
+      expect(heaviest(balanced), lessThanOrEqualTo(heaviest(plain)));
+      expect(
+        balanced.deal!.handCounts.values.every((count) => count == 8),
+        isTrue,
+      );
+    });
+
     test('redistribution par le donneur suivant après 7 cartes', () {
       final invalid = [
         ...['7S', '8S', '9S', '10S', 'JS', 'QS', 'KS', '7H'],
@@ -217,70 +288,137 @@ void main() {
   });
 
   group('Belote-rebelote', () {
-    test('déclarée sur les deux cartes, elle est validée', () {
+    test('déclarée une seule fois, sur la première carte choisie', () {
       final tracker = BeloteTracker(
         trump: Suit.hearts,
         hands: {
           0: [Card.parse('KH'), Card.parse('QH')],
         },
       );
-      tracker.onCardPlayed(
-        0,
-        Card.parse('KH'),
-        declareBelote: true,
-        declareRebelote: false,
-      );
+      tracker.onCardPlayed(0, Card.parse('KH'), declareBelote: true);
+      expect(tracker.declaredFirst[0], isTrue);
       expect(tracker.completedTeam, isNull);
       expect(tracker.canStillEarn(0), isTrue);
 
-      tracker.onCardPlayed(
-        0,
-        Card.parse('QH'),
-        declareBelote: false,
-        declareRebelote: true,
-      );
+      // Un second « oui » sur l'autre carte ne redéclare pas la belote :
+      // la rebelote se valide automatiquement, une seule fois.
+      tracker.onCardPlayed(0, Card.parse('QH'), declareBelote: true);
+      expect(tracker.rebeloteDeclared[0], isTrue);
       expect(tracker.completedTeam, 0);
       expect(tracker.canStillEarn(0), isFalse);
     });
 
-    test('sans déclaration sur la première carte, plus de bonus', () {
+    test('rebelote automatique sur la seconde carte', () {
       final tracker = BeloteTracker(
         trump: Suit.hearts,
         hands: {
           0: [Card.parse('KH'), Card.parse('QH')],
         },
       );
-      tracker.onCardPlayed(
-        0,
-        Card.parse('KH'),
-        declareBelote: false,
-        declareRebelote: false,
-      );
+      tracker.onCardPlayed(0, Card.parse('QH'), declareBelote: true);
+      tracker.onCardPlayed(0, Card.parse('KH'), declareBelote: false);
+      expect(tracker.rebeloteDeclared[0], isTrue);
+      expect(tracker.completedTeam, 0);
       expect(tracker.canStillEarn(0), isFalse);
-      tracker.onCardPlayed(
-        0,
-        Card.parse('QH'),
-        declareBelote: false,
-        declareRebelote: true,
-      );
-      expect(tracker.completedTeam, isNull);
     });
 
-    test('belote non terminée : aucun bonus', () {
+    test('refuser la déclaration interdit définitivement le bonus', () {
       final tracker = BeloteTracker(
         trump: Suit.hearts,
         hands: {
           0: [Card.parse('KH'), Card.parse('QH')],
         },
       );
-      tracker.onCardPlayed(
-        0,
-        Card.parse('KH'),
-        declareBelote: true,
-        declareRebelote: false,
-      );
+      tracker.onCardPlayed(0, Card.parse('KH'), declareBelote: false);
+      expect(tracker.declined[0], isTrue);
+      expect(tracker.canStillDeclareFirst(0), isFalse);
+
+      tracker.onCardPlayed(0, Card.parse('QH'), declareBelote: true);
+      expect(tracker.rebeloteDeclared[0], isNot(isTrue));
       expect(tracker.completedTeam, isNull);
-      expect(tracker.bonusSecured, isFalse);
+      expect(tracker.canStillEarn(0), isFalse);
+    });
+
+    test('sans le roi et la dame, aucun bonus', () {
+      final tracker = BeloteTracker(
+        trump: Suit.hearts,
+        hands: {
+          0: [Card.parse('KH')],
+        },
+      );
+      expect(tracker.canDeclareFirst(0, Card.parse('KH')), isFalse);
+      tracker.onCardPlayed(0, Card.parse('KH'), declareBelote: true);
+      expect(tracker.declaredFirst[0], isNot(isTrue));
+      expect(tracker.completedTeam, isNull);
+      expect(tracker.canStillEarn(0), isFalse);
+    });
+
+    test('le moteur n’annonce que si le joueur a choisi de déclarer', () {
+      final rest = fullDeck()
+          .where((card) => card.id != 'KH' && card.id != 'QH')
+          .toList();
+      final hands = <int, List<Card>>{
+        0: [
+          Card.parse('KH'),
+          Card.parse('QH'),
+          ...rest.take(6),
+        ],
+        1: rest.sublist(6, 14),
+        2: rest.sublist(14, 22),
+        3: rest.sublist(22, 30),
+      };
+      Contract contract() => const Contract(
+            type: ContractType.points,
+            amount: 90,
+            trump: Suit.hearts,
+            bidderSeat: 0,
+            demandeurSeat: 0,
+            counter: CounterState.none,
+          );
+
+      final without = Deal.readyToPlay(
+        dealerSeat: 3,
+        hands: {
+          for (final entry in hands.entries) entry.key: [...entry.value],
+        },
+        contract: contract(),
+        log: EventLog(),
+      );
+      without.playCard(0, Card.parse('KH'));
+      expect(without.log.events.where((e) => e.type == 'belote'), isEmpty);
+      expect(without.belote!.declined[0], isTrue);
+
+      final withDeclaration = Deal.readyToPlay(
+        dealerSeat: 3,
+        hands: {
+          for (final entry in hands.entries) entry.key: [...entry.value],
+        },
+        contract: contract(),
+        log: EventLog(),
+      );
+      withDeclaration.playCard(0, Card.parse('KH'), declareBelote: true);
+      expect(
+        withDeclaration.log.events.where((e) => e.type == 'belote'),
+        hasLength(1),
+      );
+      expect(withDeclaration.belote!.declaredFirst[0], isTrue);
+
+      var guard = 0;
+      while (withDeclaration.phase == DealPhase.playing && guard++ < 40) {
+        final seat = withDeclaration.currentTurnSeat;
+        final legal = withDeclaration.legalCardsFor(seat);
+        if (legal.isEmpty) break;
+        withDeclaration.playCard(seat, legal.first);
+      }
+      expect(
+        withDeclaration.log.events.where((e) => e.type == 'belote'),
+        hasLength(1),
+      );
+      expect(
+        withDeclaration.log.events.where((e) => e.type == 'rebelote'),
+        hasLength(1),
+      );
+      expect(withDeclaration.belote!.completedTeam, 0);
     });
   });
 
@@ -308,12 +446,7 @@ void main() {
             final seat = game.deal!.currentTurnSeat;
             final decision = bot.decidePlay(game, seat);
             expect(decision, isNotNull);
-            game.playCard(
-              seat,
-              decision!.card,
-              declareBelote: decision.declareBelote,
-              declareRebelote: decision.declareRebelote,
-            );
+            game.playCard(seat, decision!.card);
           case GamePhase.dealComplete:
           case GamePhase.setComplete:
             game.nextDeal();

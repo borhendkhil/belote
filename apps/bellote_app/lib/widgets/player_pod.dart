@@ -4,6 +4,7 @@ import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
 import '../widgets/playing_card.dart';
+import '../widgets/turn_ring.dart';
 
 class PlayerPod extends StatelessWidget {
   const PlayerPod({
@@ -23,6 +24,8 @@ class PlayerPod extends StatelessWidget {
     this.belote = false,
     this.rebelote = false,
     this.compact = false,
+    this.turnDeadline,
+    this.turnDuration,
     this.onTap,
   });
 
@@ -41,6 +44,10 @@ class PlayerPod extends StatelessWidget {
   final bool belote;
   final bool rebelote;
   final bool compact;
+
+  /// Échéance du tour et durée totale, pour l'anneau de compte à rebours.
+  final DateTime? turnDeadline;
+  final Duration? turnDuration;
   final VoidCallback? onTap;
 
   @override
@@ -48,6 +55,10 @@ class PlayerPod extends StatelessWidget {
     final l10n = L10n.of(context);
     final tint = teamColor(team);
     final avatarSize = compact ? 34.0 : 42.0;
+    // L'anneau n'a de sens que sur un tour humain (les bots jouent en 0,9 s).
+    final showClock = isTurn &&
+        turnDeadline != null &&
+        (turnDuration?.inMilliseconds ?? 0) >= 5000;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -100,42 +111,53 @@ class PlayerPod extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: avatarSize,
-                      height: avatarSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            tint.withValues(alpha: 0.34),
-                            AppTheme.feltDeep,
-                          ],
-                        ),
-                        border: Border.all(
-                          color: isTurn
-                              ? AppTheme.gold
-                              : tint.withValues(alpha: 0.6),
-                          width: isTurn ? 2 : 1.2,
-                        ),
-                      ),
-                      child: Center(
-                        child: isBot
-                            ? Icon(
-                                Icons.smart_toy_outlined,
-                                size: avatarSize * 0.48,
-                                color: tint,
-                              )
-                            : Text(
-                                initials(name),
-                                style: TextStyle(
-                                  color: tint,
-                                  fontSize: avatarSize * 0.36,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                      ),
+                    Builder(
+                      builder: (context) {
+                        final avatar = Container(
+                          width: avatarSize,
+                          height: avatarSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                tint.withValues(alpha: 0.34),
+                                AppTheme.feltDeep,
+                              ],
+                            ),
+                            border: Border.all(
+                              color: isTurn
+                                  ? AppTheme.gold
+                                  : tint.withValues(alpha: 0.6),
+                              width: isTurn ? 2 : 1.2,
+                            ),
+                          ),
+                          child: Center(
+                            child: isBot
+                                ? Icon(
+                                    Icons.smart_toy_outlined,
+                                    size: avatarSize * 0.48,
+                                    color: tint,
+                                  )
+                                : Text(
+                                    initials(name),
+                                    style: TextStyle(
+                                      color: tint,
+                                      fontSize: avatarSize * 0.36,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                          ),
+                        );
+                        if (!showClock) return avatar;
+                        return TurnRing(
+                          deadline: turnDeadline!,
+                          duration: turnDuration!,
+                          size: avatarSize,
+                          child: avatar,
+                        );
+                      },
                     ),
                     if (isDealer)
                       Positioned(

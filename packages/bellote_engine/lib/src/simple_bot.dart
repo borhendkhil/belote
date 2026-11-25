@@ -8,15 +8,10 @@ import 'rules.dart';
 import 'view.dart';
 
 class PlayDecision {
-  const PlayDecision({
-    required this.card,
-    this.declareBelote = false,
-    this.declareRebelote = false,
-  });
+  const PlayDecision({required this.card, this.declareBelote = false});
 
   final Card card;
   final bool declareBelote;
-  final bool declareRebelote;
 }
 
 /// IA simple, déterministe à graine près. Elle respecte toujours les cartes
@@ -99,23 +94,13 @@ class SimpleBot {
     final legal = [...view.legalCards];
     final card = _chooseCard(view, trump, legal);
 
-    var declareBelote = false;
-    var declareRebelote = false;
-    if (view.holdsBelote &&
+    // Un bot annonce la belote en jouant la première de ses deux cartes
+    // d'atout. La rebelote se valide ensuite automatiquement.
+    final declareBelote = view.canDeclareBelote &&
         card.suit == trump &&
-        (card.rank == Rank.king || card.rank == Rank.queen)) {
-      if (view.canDeclareRebelote && view.beloteDeclared) {
-        declareRebelote = true;
-      } else if (view.canDeclareBelote && !view.beloteDeclared) {
-        declareBelote = true;
-      }
-    }
+        (card.rank == Rank.king || card.rank == Rank.queen);
 
-    return PlayDecision(
-      card: card,
-      declareBelote: declareBelote,
-      declareRebelote: declareRebelote,
-    );
+    return PlayDecision(card: card, declareBelote: declareBelote);
   }
 
   Card _chooseCard(PlayerView view, Suit trump, List<Card> legal) {

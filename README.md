@@ -26,16 +26,20 @@ illégale et l'application n'affiche que les actions autorisées par la vue
 
 - 32 cartes, 4 joueurs, 2 équipes (sièges pairs / impairs).
 - Distribution de 8 cartes ; redistribution si une main contient 7 ou 8 cartes
-  de la même couleur, ou après quatre passes.
+  de la même couleur, si le total d'une main dépasse 12 points (valeurs hors
+  atout), ou après quatre passes.
 - Enchères de 90 à 180 par pas de 10, ou capot. Le capot est au-dessus de tout
   et ne peut pas être contré. Trois passes après la dernière annonce ferment
   les enchères.
-- Contre et surcontre (hors tour), belote-rebelote (20 points), dix de der
-  (10 points).
+- Contre et surcontre (hors tour), belote-rebelote déclarée au choix du joueur
+  une seule fois en jouant le roi ou la dame d'atout (20 points), rebelote
+  validée automatiquement, dix de der (10 points).
 - Le joueur à droite du donneur parle et entame ; jeu dans le sens
   anti-horaire (`(siège + 1) % 4`).
 - Obligation de fournir la couleur, de monter à l'atout, de couper ou
   surcouper selon le cas, et de jouer atout lorsqu'un joueur est bloqué.
+- Dernière carte ou seule carte légale jouée automatiquement (sauf si elle
+  permet encore de déclarer la belote : le choix reste au joueur).
 - Contrat réussi si les points arrondis de l'attaque atteignent le montant.
   Contrat chuté : 160 à la défense ; contré : 320 ; surcontré : 640 ;
   capot demandé : 500 ; capot non demandé : 250.

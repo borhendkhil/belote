@@ -5,6 +5,22 @@ import 'package:bellote_engine/bellote_engine.dart';
 
 import 'hub.dart';
 
+/// Carte à jouer automatiquement quand [seat] n'a aucun choix réel.
+///
+/// Renvoie `null` dès qu'une décision reste à prendre : plusieurs cartes
+/// légales, ou une seule carte légale qui permettrait encore de déclarer la
+/// belote. Dans ce dernier cas, le joueur garde son tour et son choix.
+Card? forcedPlayCard(Deal deal, int seat) {
+  if (deal.phase != DealPhase.playing || deal.currentTurnSeat != seat) {
+    return null;
+  }
+  final legal = deal.legalCardsFor(seat);
+  if (legal.length != 1) return null;
+  final card = legal.first;
+  if (deal.belote?.canDeclareFirst(seat, card) ?? false) return null;
+  return card;
+}
+
 class SeatSlot {
   SeatSlot({
     required this.token,
@@ -65,6 +81,7 @@ class Room {
   int _serial = 0;
   bool _disposed = false;
   DateTime? _turnDeadline;
+  Duration? _turnDuration;
 
   final List<Map<String, dynamic>> chat = [];
   final List<Map<String, dynamic>> notices = [];
@@ -443,8 +460,6 @@ class Room {
             Card.parse(cardId),
             declareBelote:
                 message['belote'] == true || message['declareBelote'] == true,
-            declareRebelote: message['rebelote'] == true ||
-                message['declareRebelote'] == true,
           );
         default:
           connection.sendError('unknown_message');
@@ -546,6 +561,7 @@ class Room {
     _nextDealTimer?.cancel();
     _nextDealTimer = null;
     _turnDeadline = null;
+    _turnDuration = null;
 
     final game = this.game;
     if (game == null) {
@@ -572,15 +588,41 @@ class Room {
     if (seat == null) return;
     final slot = seats[seat];
     final auto = slot == null || slot.isBot || slot.autoPlay || !slot.connected;
-    final delay =
-        auto ? const Duration(milliseconds: 900) : const Duration(seconds: 45);
+    // Un humain qui n'a qu'une carte légale n'a rien à décider : on joue cette
+    // carte très vite, sans le faire attendre ni lancer le chrono de 45 s.
+    final deal = game.deal;
+    final forced = auto || deal == null ? null : forcedPlayCard(deal, seat);
+    final delay = forced != null
+        ? const Duration(milliseconds: 260)
+        : auto
+            ? const Duration(milliseconds: 900)
+            : const Duration(seconds: 45);
     _turnDeadline = DateTime.now().add(delay);
+    _turnDuration = delay;
     final serial = _serial;
     _actionTimer = Timer(delay, () {
       if (_disposed || serial != _serial) return;
       final current = this.game;
       if (current == null) return;
       if (_actingSeat(current) != seat) return;
+
+      if (forced != null) {
+        final currentDeal = current.deal;
+        final stillForced =
+            currentDeal != null ? forcedPlayCard(currentDeal, seat) : null;
+        if (stillForced == forced) {
+          try {
+            current.playCard(seat, forced, declareBelote: false);
+          } catch (error, stack) {
+            // Filet de sécurité : ne jamais bloquer la partie.
+            // ignore: avoid_print
+            print('Carte forcée erreur: $error\n$stack');
+          }
+        }
+        _refresh();
+        return;
+      }
+
       final isBotTurn = seats[seat] == null ||
           seats[seat]!.isBot ||
           seats[seat]!.autoPlay ||
@@ -626,7 +668,6 @@ class Room {
             seat,
             decision.card,
             declareBelote: decision.declareBelote,
-            declareRebelote: decision.declareRebelote,
           );
         }
         return;
@@ -670,6 +711,7 @@ class Room {
     _actionTimer?.cancel();
     _actionTimer = null;
     _turnDeadline = null;
+    _turnDuration = null;
     final game = this.game;
     if (game == null) return;
     if (game.phase == GamePhase.bidding || game.phase == GamePhase.playing) {
@@ -710,6 +752,7 @@ class Room {
       'room': roomJson(),
       'players': playersJson(),
       'turnDeadline': _turnDeadline?.millisecondsSinceEpoch,
+      'turnDurationMs': _turnDuration?.inMilliseconds,
       'serverTime': DateTime.now().millisecondsSinceEpoch,
       if (game != null) 'phase': game.phase.name,
     };

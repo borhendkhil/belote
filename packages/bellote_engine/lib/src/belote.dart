@@ -2,6 +2,10 @@ import 'card.dart';
 import 'contract.dart';
 
 /// Suivi de la belote-rebelote d'une donne.
+///
+/// La belote se déclare **une seule fois**, en jouant le roi ou la dame
+/// d'atout tant qu'aucune autre carte n'a été jouée par ce joueur. Une fois
+/// déclarée, la seconde carte d'atout valide automatiquement la rebelote.
 class BeloteTracker {
   BeloteTracker({required this.trump, required Map<int, List<Card>> hands}) {
     for (final entry in hands.entries) {
@@ -68,18 +72,12 @@ class BeloteTracker {
       card.suit == trump &&
       (card.rank == Rank.king || card.rank == Rank.queen);
 
+  /// La déclaration n'est possible que sur la toute première carte du joueur.
   bool canDeclareFirst(int seat, Card card) {
     if (!isBeloteCard(seat, card)) return false;
     if (completed[seat] == true || declined[seat] == true) return false;
     if (declaredFirst[seat] == true) return false;
     return (_played[seat] ?? const {}).isEmpty;
-  }
-
-  bool canDeclareRebelote(int seat, Card card) {
-    if (!isBeloteCard(seat, card)) return false;
-    if (declaredFirst[seat] != true) return false;
-    if (completed[seat] == true) return false;
-    return (_played[seat] ?? const {}).length == 1;
   }
 
   bool canStillDeclareFirst(int seat) {
@@ -89,16 +87,19 @@ class BeloteTracker {
     return (_played[seat] ?? const {}).isEmpty;
   }
 
+  /// Vrai si cette carte valide automatiquement la rebelote déjà déclarée.
+  bool canDeclareRebelote(int seat, Card card) {
+    if (!isBeloteCard(seat, card)) return false;
+    if (declaredFirst[seat] != true) return false;
+    if (completed[seat] == true) return false;
+    return (_played[seat] ?? const {}).length == 1;
+  }
+
   /// Met à jour l'état quand [seat] joue [card].
   ///
-  /// Les déclarations sont volontairement optionnelles : ne rien déclarer
-  /// sur la première carte interdit définitivement la rebelote.
-  void onCardPlayed(
-    int seat,
-    Card card, {
-    required bool declareBelote,
-    required bool declareRebelote,
-  }) {
+  /// [declareBelote] n'est lu que sur la première carte : la rebelote, elle,
+  /// se valide seule dès que la seconde carte d'atout tombe.
+  void onCardPlayed(int seat, Card card, {required bool declareBelote}) {
     if (isBeloteCard(seat, card)) {
       final played = _played[seat] ?? <Card>{};
       final otherRank = card.rank == Rank.king ? Rank.queen : Rank.king;
@@ -113,13 +114,9 @@ class BeloteTracker {
         } else {
           declined[seat] = true;
         }
-      } else {
-        if (declareRebelote &&
-            declaredFirst[seat] == true &&
-            declined[seat] != true) {
-          rebeloteDeclared[seat] = true;
-          completed[seat] = true;
-        }
+      } else if (declaredFirst[seat] == true) {
+        rebeloteDeclared[seat] = true;
+        completed[seat] = true;
       }
       played.add(card);
       _played[seat] = played;

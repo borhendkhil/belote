@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:bellote_engine/bellote_engine.dart';
 import 'package:material_ui/material_ui.dart' hide Card;
 import 'package:flutter/services.dart';
@@ -5,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../net/game_client.dart';
+import '../widgets/belote_banner.dart';
 import '../widgets/bid_panel.dart';
 import '../widgets/chat_sheet.dart';
 import '../widgets/common.dart';
@@ -14,6 +18,7 @@ import '../widgets/playing_card.dart';
 import '../widgets/result_overlay.dart';
 import '../widgets/rules_sheet.dart';
 import '../widgets/settings_sheet.dart';
+import '../widgets/turn_ring.dart';
 
 class TableScreen extends StatefulWidget {
   const TableScreen({super.key, required this.client});
@@ -26,8 +31,57 @@ class TableScreen extends StatefulWidget {
 
 class _TableScreenState extends State<TableScreen> {
   int? _dismissedDeal;
+  Card? _hoveredCard;
+
+  GameEvent? _announcement;
+  Timer? _announcementTimer;
+  int? _lastEventSeq;
 
   GameClient get client => widget.client;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastEventSeq = widget.client.view?.eventSeq;
+    widget.client.addListener(_onClientChanged);
+  }
+
+  @override
+  void didUpdateWidget(TableScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.client != widget.client) {
+      oldWidget.client.removeListener(_onClientChanged);
+      _lastEventSeq = widget.client.view?.eventSeq;
+      widget.client.addListener(_onClientChanged);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.client.removeListener(_onClientChanged);
+    _announcementTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Annonce « Belote » / « Rebelote » à toute la table dès que le moteur
+  /// publie l'événement correspondant.
+  void _onClientChanged() {
+    final view = widget.client.view;
+    if (view == null) return;
+    final last = _lastEventSeq;
+    if (last == null) {
+      _lastEventSeq = view.eventSeq;
+      return;
+    }
+    _lastEventSeq = view.eventSeq;
+    final latest = latestBeloteEvent(view.events, last);
+    if (latest == null) return;
+    _announcementTimer?.cancel();
+    setState(() => _announcement = latest);
+    _announcementTimer = Timer(const Duration(milliseconds: 2800), () {
+      if (mounted) setState(() => _announcement = null);
+    });
+  }
 
   Future<void> _confirmLeave(BuildContext context) async {
     final l10n = L10n.of(context);
@@ -62,17 +116,20 @@ class _TableScreenState extends State<TableScreen> {
   }
 
   Future<void> _onCardTap(Card card) async {
+    if (_hoveredCard == card) {
+      setState(() => _hoveredCard = null);
+    }
     final view = client.view;
     if (view == null || !view.isMyTurn) return;
     if (!view.legalCards.contains(card)) return;
 
-    final isTrumpPair = view.trump != null &&
+    // La belote se déclare au choix du joueur, une seule fois, en jouant le
+    // roi ou la dame d'atout. La rebelote qui suit est automatique.
+    final canBelote = view.canDeclareBelote &&
+        view.trump != null &&
         card.suit == view.trump &&
         (card.rank == Rank.king || card.rank == Rank.queen);
-    final canBelote = isTrumpPair && view.canDeclareBelote;
-    final canRebelote = isTrumpPair && view.canDeclareRebelote;
-
-    if (!canBelote && !canRebelote) {
+    if (!canBelote) {
       await client.play(card);
       return;
     }
@@ -116,9 +173,7 @@ class _TableScreenState extends State<TableScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      canBelote
-                          ? l10n.t('declareBelote')
-                          : l10n.t('declareRebelote'),
+                      l10n.t('declareBelote'),
                       style: const TextStyle(
                         color: AppTheme.cream,
                         fontSize: 17,
@@ -136,15 +191,19 @@ class _TableScreenState extends State<TableScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.t('beloteHint'),
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 12,
+                ),
+              ),
               const SizedBox(height: 14),
               FilledButton.icon(
                 onPressed: () => Navigator.of(sheetContext).pop(true),
                 icon: const Icon(Icons.campaign_outlined),
-                label: Text(
-                  canBelote
-                      ? l10n.t('playWithBelote')
-                      : l10n.t('playWithRebelote'),
-                ),
+                label: Text(l10n.t('playWithBelote')),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -158,11 +217,12 @@ class _TableScreenState extends State<TableScreen> {
     );
 
     if (declare == null) return;
-    await client.play(
-      card,
-      belote: declare && canBelote,
-      rebelote: declare && canRebelote,
-    );
+    await client.play(card, belote: declare);
+  }
+
+  void _setHovered(Card? card) {
+    if (_hoveredCard == card) return;
+    setState(() => _hoveredCard = card);
   }
 
   @override
@@ -208,6 +268,18 @@ class _TableScreenState extends State<TableScreen> {
                         const SizedBox(height: 6),
                     ],
                   ),
+                  if (_announcement != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Align(
+                          alignment: const Alignment(0, -0.42),
+                          child: BeloteBanner(
+                            event: _announcement!,
+                            client: client,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (showResult)
                     ResultOverlay(
                       client: client,
@@ -261,9 +333,7 @@ class _TableScreenState extends State<TableScreen> {
     if (view.isPlaying && view.isMyTurn) {
       message = view.canDeclareBelote
           ? l10n.t('beloteHint')
-          : view.canDeclareRebelote
-              ? l10n.t('rebeloteHint')
-              : l10n.t('tapCardToPlay');
+          : l10n.t('tapCardToPlay');
     } else if (view.isPlaying && view.turnSeat != null) {
       message = l10n.t('waitingTurn', {
         'name': l10n.seatName(client.room, view.turnSeat!, me: client.seat),
@@ -306,42 +376,105 @@ class _TableScreenState extends State<TableScreen> {
   }
 
   Widget _hand(BuildContext context, PlayerView view) {
-    final hand = view.hand;
+    // Pendant les enchères, l'atout peut changer à chaque annonce : on fige
+    // l'ordre affiché pour que les cartes ne sautent pas dans la main.
+    final hand = orderedHand(
+      view.hand,
+      view.phase == 'bidding' ? null : view.trump,
+    );
     if (hand.isEmpty) return const SizedBox(height: 10);
     final legal = view.legalCards.toSet();
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          const gap = 5.0;
-          const sidePadding = 14.0;
-          final available =
-              constraints.maxWidth - sidePadding * 2 - gap * (hand.length - 1);
-          final cardWidth =
-              (available / hand.length).clamp(32.0, 62.0).toDouble();
-          final totalWidth = cardWidth * hand.length + gap * (hand.length - 1);
+          const sidePadding = 10.0;
+          const overlap = 0.62;
+          const maxCardWidth = 62.0;
+          const minCardWidth = 34.0;
+          const arcLift = 9.0;
+          // La carte sélectionnée monte franchement en Y : son angle et sa
+          // position horizontale restent inchangés, aucun décalage en Z.
+          const liftAmount = 16.0;
+
+          final available = constraints.maxWidth - sidePadding * 2;
+          final cardWidth = (available / (1 + overlap * (hand.length - 1)))
+              .clamp(minCardWidth, maxCardWidth)
+              .toDouble();
+          final step = hand.length > 1
+              ? math.min(
+                  cardWidth * overlap,
+                  (available - cardWidth) / (hand.length - 1),
+                )
+              : 0.0;
+          final totalWidth = cardWidth + step * (hand.length - 1);
+          final cardHeight = cardWidth * 1.45;
+          final center = (hand.length - 1) / 2;
+          // On réserve la hauteur du soulèvement pour que la carte levée ne
+          // vienne pas chevaucher la ligne de statut au-dessus de la main.
+          final fanHeight = cardHeight + arcLift + 12 + liftAmount;
+
+          final canPlay = view.isPlaying && view.isMyTurn;
+          final playable = <int>[];
+          for (var i = 0; i < hand.length; i++) {
+            if (canPlay && legal.contains(hand[i])) playable.add(i);
+          }
+          final hoveredIndex =
+              _hoveredCard == null ? -1 : hand.indexOf(_hoveredCard!);
+          final lifted = <int>{
+            ...playable,
+            if (hoveredIndex >= 0) hoveredIndex,
+          };
+          // Ordre de rendu stable : une carte levée ne passe pas devant ses
+          // voisines. Elle monte depuis l'éventail, sans créer de calque
+          // « posé par-dessus » la main.
+          const movement = Duration(milliseconds: 280);
+          const movementCurve = Curves.easeOutCubic;
+
           return SizedBox(
-            height: cardWidth * 1.45 + 12,
+            height: fanHeight,
             child: Center(
-              child: SizedBox(
+              child: AnimatedContainer(
+                duration: movement,
+                curve: movementCurve,
                 width: totalWidth,
-                height: cardWidth * 1.45,
+                height: fanHeight,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
                     for (var i = 0; i < hand.length; i++)
-                      Positioned(
-                        left: i * (cardWidth + gap),
-                        top: 0,
-                        child: PlayingCard(
-                          card: hand[i],
-                          width: cardWidth,
-                          highlighted: view.isMyTurn && legal.contains(hand[i]),
-                          dimmed: view.isMyTurn && !legal.contains(hand[i]),
-                          isTrump: view.trump == hand[i].suit,
-                          onTap: view.isMyTurn && legal.contains(hand[i])
-                              ? () => _onCardTap(hand[i])
-                              : null,
+                      AnimatedPositioned(
+                        duration: movement,
+                        curve: movementCurve,
+                        left: i * step,
+                        // Le soulèvement est appliqué ici, avant la rotation :
+                        // c'est une translation verticale à l'écran, pas une
+                        // translation locale qui pencherait avec la carte.
+                        top: liftAmount +
+                            arcLift +
+                            4 -
+                            arcLift * _fanArc(i, center) -
+                            (lifted.contains(i) ? liftAmount : 0),
+                        child: MouseRegion(
+                          onEnter: (_) => _setHovered(hand[i]),
+                          onExit: (_) => _setHovered(null),
+                          child: AnimatedRotation(
+                            duration: movement,
+                            curve: movementCurve,
+                            // Éventail : les cartes s'inclinent vers l'extérieur.
+                            turns: (i - center) * 0.045 / (2 * math.pi),
+                            alignment: Alignment.bottomCenter,
+                            child: PlayingCard(
+                              card: hand[i],
+                              width: cardWidth,
+                              shadow: 0.45,
+                              highlighted: canPlay && legal.contains(hand[i]),
+                              isTrump: view.trump == hand[i].suit,
+                              onTap: canPlay && legal.contains(hand[i])
+                                  ? () => _onCardTap(hand[i])
+                                  : null,
+                            ),
+                          ),
                         ),
                       ),
                   ],
@@ -352,6 +485,13 @@ class _TableScreenState extends State<TableScreen> {
         },
       ),
     );
+  }
+
+  /// Hauteur relative d'une carte dans l'éventail (1 au centre, 0 aux bords).
+  double _fanArc(int index, double center) {
+    if (center <= 0) return 1;
+    final t = (index - center) / center;
+    return 1 - t * t;
   }
 }
 
@@ -632,6 +772,8 @@ class _TableArea extends StatelessWidget {
         cardPoints: view.isPlaying ? view.cardPointsByTeam[seat % 2] : null,
         belote: view.beloteTeam == (seat % 2),
         compact: compact,
+        turnDeadline: client.turnDeadline,
+        turnDuration: client.turnDuration,
       );
     }
 
@@ -639,6 +781,7 @@ class _TableArea extends StatelessWidget {
       builder: (context, constraints) {
         final tight = constraints.maxHeight < 320;
         return Stack(
+          clipBehavior: Clip.none,
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
@@ -664,7 +807,7 @@ class _TableArea extends StatelessWidget {
             if (view.lastTrick != null && !tight)
               Positioned(
                 top: 0,
-                left: 0,
+                right: 0,
                 child: _LastTrickPanel(client: client, view: view),
               ),
           ],
@@ -688,22 +831,94 @@ class _TableArea extends StatelessWidget {
   }
 }
 
-class _TrickArea extends StatelessWidget {
+/// Durée du lancer d'une carte vers le tapis (assez lente pour être vue).
+const _throwDuration = Duration(milliseconds: 520);
+
+class _TrickArea extends StatefulWidget {
   const _TrickArea({required this.client, required this.view});
 
   final GameClient client;
   final PlayerView view;
 
   @override
+  State<_TrickArea> createState() => _TrickAreaState();
+}
+
+class _TrickAreaState extends State<_TrickArea>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _gather = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 180),
+    // Le ramassage doit rester visible même si les animations système sont
+    // désactivées sur le téléphone.
+    animationBehavior: AnimationBehavior.preserve,
+  );
+
+  /// Cartes du pli qui vient de se terminer, ramassées vers le gagnant.
+  List<PlayedCard> _gathered = const [];
+  int? _gatheredTrick;
+  Timer? _settleTimer;
+
+  @override
+  void didUpdateWidget(covariant _TrickArea oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final previous = oldWidget.view;
+    final view = widget.view;
+    final completed = previous.currentTrick.isNotEmpty &&
+        view.currentTrick.isEmpty &&
+        view.tricksPlayed > previous.tricksPlayed;
+    if (completed && view.lastTrick != null) {
+      // Le moteur résout le pli dès la 4e carte : on laisse d'abord la carte
+      // arriver (lancer), puis on ramasse les 4 cartes vers le gagnant.
+      _gathered = view.lastTrick!.plays;
+      _gatheredTrick = view.tricksPlayed;
+      _gather.stop();
+      _gather.value = 0;
+      _settleTimer?.cancel();
+      _settleTimer = Timer(_throwDuration, () {
+        if (!mounted || _gatheredTrick != widget.view.tricksPlayed) return;
+        _gather.forward(from: 0).whenCompleteOrCancel(() {
+          if (!mounted || _gatheredTrick != widget.view.tricksPlayed) return;
+          setState(() => _gathered = const []);
+        });
+      });
+    } else if (view.currentTrick.length > previous.currentTrick.length) {
+      // Un nouveau pli démarre : on abandonne le ramassage précédent.
+      _settleTimer?.cancel();
+      _gather.stop();
+      _gathered = const [];
+      _gatheredTrick = null;
+    } else if (view.tricksPlayed < previous.tricksPlayed) {
+      // Nouvelle donne : on repart d'une table vide.
+      _settleTimer?.cancel();
+      _gathered = const [];
+      _gatheredTrick = null;
+      _gather.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _settleTimer?.cancel();
+    _gather.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final client = widget.client;
+    final view = widget.view;
     final l10n = L10n.of(context);
     final me = client.seat ?? view.seat;
     final trump = view.trump;
-    final master = trump == null ? null : trickMaster(view.currentTrick, trump);
+    final gathering = _gathered.isNotEmpty;
+    final plays = gathering ? _gathered : view.currentTrick;
+    final master = trump == null || gathering
+        ? null
+        : trickMaster(view.currentTrick, trump);
+    final winnerSeat = view.lastTrick?.winnerSeat ?? me;
 
-    Widget slot(PlayedCard? play, Alignment alignment) {
-      if (play == null) {
-        return Align(
+    Widget placeholder(Alignment alignment) => Align(
           alignment: alignment,
           child: Container(
             width: 40,
@@ -717,20 +932,38 @@ class _TrickArea extends StatelessWidget {
             ),
           ),
         );
+
+    Widget slot(PlayedCard? play, Alignment alignment, double gatherValue) {
+      if (play == null) return placeholder(alignment);
+      final card = PlayingCard(
+        card: play.card,
+        width: 40,
+        highlighted: master?.seat == play.seat,
+        isTrump: trump == play.card.suit,
+      );
+      if (gatherValue > 0) {
+        // Le pli est ramassé immédiatement vers le siège du gagnant.
+        final eased = Curves.easeInCubic.transform(gatherValue);
+        final target = _entryOffset(winnerSeat, me);
+        return Align(
+          alignment: alignment,
+          child: Opacity(
+            opacity: (1 - eased).clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(target.dx, target.dy) * (0.55 * eased),
+              child: Transform.scale(scale: 1 - 0.45 * eased, child: card),
+            ),
+          ),
+        );
       }
       return Align(
         alignment: alignment,
         child: _PlayedCardAnimation(
-          key: ValueKey(
-            '${play.seat}-${play.card.id}-${view.tricksPlayed}',
-          ),
+          // La clé ne dépend pas du numéro de pli : les 3 premières cartes ne
+          // rejouent pas leur lancer quand la 4e arrive et clôt le pli.
+          key: ValueKey('${play.seat}-${play.card.id}'),
           from: _entryOffset(play.seat, me),
-          child: PlayingCard(
-            card: play.card,
-            width: 40,
-            highlighted: master?.seat == play.seat,
-            isTrump: trump == play.card.suit,
-          ),
+          child: card,
         ),
       );
     }
@@ -743,7 +976,7 @@ class _TrickArea extends StatelessWidget {
     };
 
     PlayedCard? playOf(int seat) {
-      for (final play in view.currentTrick) {
+      for (final play in plays) {
         if (play.seat == seat) return play;
       }
       return null;
@@ -796,35 +1029,42 @@ class _TrickArea extends StatelessWidget {
           SizedBox(
             width: 168,
             height: 128,
-            child: Stack(
-              children: [
-                for (final entry in positions.entries)
-                  slot(playOf(entry.key), entry.value),
-                if (view.currentTrick.isEmpty)
-                  Center(
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withValues(alpha: 0.14),
-                        border: Border.all(
-                          color: AppTheme.gold.withValues(alpha: 0.18),
-                        ),
-                      ),
-                      child: const Center(
-                        child: Text(
-                          'B',
-                          style: TextStyle(
-                            color: AppTheme.gold,
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
+            child: AnimatedBuilder(
+              animation: _gather,
+              builder: (context, _) {
+                final gatherValue = gathering ? _gather.value : 0.0;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    for (final entry in positions.entries)
+                      slot(playOf(entry.key), entry.value, gatherValue),
+                    if (plays.isEmpty)
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.black.withValues(alpha: 0.14),
+                            border: Border.all(
+                              color: AppTheme.gold.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'B',
+                              style: TextStyle(
+                                color: AppTheme.gold,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 2),
@@ -860,7 +1100,7 @@ class _TrickArea extends StatelessWidget {
   }
 
   String _latestBid(L10n l10n) {
-    for (final record in view.auctionHistory.reversed) {
+    for (final record in widget.view.auctionHistory.reversed) {
       final action = record.action;
       if (action is NumberBid) {
         return '${action.amount} ${action.trump.symbol}';
@@ -875,16 +1115,57 @@ class _TrickArea extends StatelessWidget {
   }
 }
 
+/// Réordonne la main pour l'affichage : l'atout d'abord, puis les couleurs
+/// alternées noir/rouge (BRBR ou RBRB). Deux cartes voisines n'ont ainsi
+/// jamais la même couleur, ce qui rend la main beaucoup plus lisible.
+List<Card> orderedHand(List<Card> hand, Suit? trump) {
+  // Seules les couleurs réellement en main comptent : sinon une couleur absente
+  // consommerait un tour d'alternance et deux couleurs de même teinte se
+  // retrouveraient voisines (atout rouge suivi du carreau, par exemple).
+  final present = {for (final card in hand) card.suit};
+  final blacks = <Suit>[
+    Suit.spades,
+    Suit.clubs,
+  ].where(present.contains).toList();
+  final reds = <Suit>[
+    Suit.hearts,
+    Suit.diamonds,
+  ].where(present.contains).toList();
+  final order = <Suit>[];
+  var wantBlack = true;
+  if (trump != null && present.contains(trump)) {
+    order.add(trump);
+    (trump.isRed ? reds : blacks).remove(trump);
+    // Après un atout rouge, on enchaîne obligatoirement sur du noir.
+    wantBlack = trump.isRed;
+  }
+  // Alterne tant qu'il reste des deux couleurs, puis vide la couleur restante.
+  while (blacks.isNotEmpty || reds.isNotEmpty) {
+    final pool = wantBlack ? blacks : reds;
+    final fallback = wantBlack ? reds : blacks;
+    order.add((pool.isNotEmpty ? pool : fallback).removeAt(0));
+    wantBlack = !wantBlack;
+  }
+  // Conserve l'ordre des rangs fourni par le moteur à l'intérieur d'une couleur.
+  return [
+    for (final suit in order)
+      for (final card in hand)
+        if (card.suit == suit) card,
+  ];
+}
+
 /// Direction d'où arrive la carte jouée, vue depuis [me].
 Offset _entryOffset(int seat, int me) {
-  if (seat == me) return const Offset(0, 46);
-  if (seat == (me + 2) % 4) return const Offset(0, -46);
-  if (seat == (me + 1) % 4) return const Offset(-52, 0);
-  return const Offset(52, 0);
+  // Assez loin pour que la carte traverse réellement la table : elle part du
+  // siège du joueur et vient se poser au centre, en ligne droite.
+  if (seat == me) return const Offset(0, 150);
+  if (seat == (me + 2) % 4) return const Offset(0, -145);
+  if (seat == (me + 1) % 4) return const Offset(-150, 0);
+  return const Offset(150, 0);
 }
 
 /// Fait glisser la carte jouée depuis son siège vers sa position au centre.
-class _PlayedCardAnimation extends StatelessWidget {
+class _PlayedCardAnimation extends StatefulWidget {
   const _PlayedCardAnimation({
     super.key,
     required this.from,
@@ -895,30 +1176,60 @@ class _PlayedCardAnimation extends StatelessWidget {
   final Widget child;
 
   @override
+  State<_PlayedCardAnimation> createState() => _PlayedCardAnimationState();
+}
+
+class _PlayedCardAnimationState extends State<_PlayedCardAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _flight = AnimationController(
+    vsync: this,
+    duration: _throwDuration,
+    // Certains téléphones désactivent les animations système : sans
+    // `preserve`, le lancer sauterait directement à sa place finale.
+    animationBehavior: AnimationBehavior.preserve,
+  )..forward();
+
+  @override
+  void dispose() {
+    _flight.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-      builder: (context, t, child) {
-        final slide = Offset(from.dx * (1 - t), from.dy * (1 - t));
+    final from = widget.from;
+
+    return AnimatedBuilder(
+      animation: _flight,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _flight.value;
+        // Départ progressif puis décélération : le trajet reste lisible au lieu
+        // de traverser la table d'un coup.
+        final travel = Curves.easeInOutCubic.transform(t);
+        final remaining = 1 - travel;
+        // Trajectoire rectiligne, sans arc.
+        final offset = Offset(from.dx * remaining, from.dy * remaining);
+        // Un demi-tour complet pendant le vol.
+        final angle = remaining * math.pi;
+        // Elle part plus grande, puis se pose.
+        final scale = 1.22 - 0.22 * Curves.easeOutBack.transform(t);
         return Opacity(
-          opacity: t,
+          opacity: (t * 10).clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: slide,
+            offset: offset,
             child: Transform.rotate(
-              angle: (1 - t) * 0.05,
-              child: Transform.scale(scale: 0.82 + 0.18 * t, child: child),
+              angle: angle,
+              child: Transform.scale(scale: scale, child: child),
             ),
           ),
         );
       },
-      child: child,
     );
   }
 }
 
-/// Petit panneau du dernier pli terminé, affiché en haut à gauche de la table.
+/// Petit panneau du dernier pli terminé, affiché en haut à droite de la table.
 class _LastTrickPanel extends StatelessWidget {
   const _LastTrickPanel({required this.client, required this.view});
 
@@ -934,7 +1245,7 @@ class _LastTrickPanel extends StatelessWidget {
         ? l10n.t('you')
         : l10n.seatName(client.room, trick.winnerSeat, me: client.seat);
     return Container(
-      padding: const EdgeInsets.fromLTRB(5, 4, 5, 4),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.24),
         borderRadius: BorderRadius.circular(9),
@@ -942,6 +1253,7 @@ class _LastTrickPanel extends StatelessWidget {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text(
             l10n.t('lastTrick'),
@@ -952,31 +1264,33 @@ class _LastTrickPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 3),
-          SizedBox(
-            width: 54,
-            child: Wrap(
-              spacing: 2,
-              runSpacing: 2,
-              children: [
-                for (final play in trick.plays)
-                  PlayingCard(
-                    card: play.card,
-                    width: 26,
-                    isTrump: view.trump == play.card.suit,
-                    highlighted: play.seat == trick.winnerSeat,
-                  ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < trick.plays.length; i++) ...[
+                if (i > 0) const SizedBox(width: 1),
+                PlayingCard(
+                  card: trick.plays[i].card,
+                  width: 23,
+                  isTrump: view.trump == trick.plays[i].card.suit,
+                  highlighted: trick.plays[i].seat == trick.winnerSeat,
+                ),
               ],
-            ),
+            ],
           ),
           const SizedBox(height: 3),
-          Text(
-            '${trick.points} · $winner',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: teamColor(trick.winningTeam),
-              fontSize: 7.5,
-              fontWeight: FontWeight.w700,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 88),
+            child: Text(
+              '${trick.points} · $winner',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: teamColor(trick.winningTeam),
+                fontSize: 7.5,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -1012,26 +1326,42 @@ class _SelfBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [tint.withValues(alpha: 0.35), AppTheme.feltDeep],
-              ),
-              border: Border.all(color: tint.withValues(alpha: 0.6)),
-            ),
-            child: Center(
-              child: Text(
-                initials(player?.name ?? l10n.t('you')),
-                style: TextStyle(
-                  color: tint,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
+          Builder(
+            builder: (context) {
+              final avatar = Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [tint.withValues(alpha: 0.35), AppTheme.feltDeep],
+                  ),
+                  border: Border.all(color: tint.withValues(alpha: 0.6)),
                 ),
-              ),
-            ),
+                child: Center(
+                  child: Text(
+                    initials(player?.name ?? l10n.t('you')),
+                    style: TextStyle(
+                      color: tint,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+              final deadline = client.turnDeadline;
+              final duration = client.turnDuration;
+              final showClock = view.isMyTurn &&
+                  deadline != null &&
+                  (duration?.inMilliseconds ?? 0) >= 5000;
+              if (!showClock) return avatar;
+              return TurnRing(
+                deadline: deadline,
+                duration: duration!,
+                size: 28,
+                child: avatar,
+              );
+            },
           ),
           const SizedBox(width: 8),
           Expanded(

@@ -276,10 +276,8 @@ class L10n {
     'earlyStopContract': 'Le contrat ne peut plus être réussi.',
     'earlyStopCapot': 'La défense a remporté un pli : capot raté.',
     'declareBelote': 'Déclarer Belote',
-    'declareRebelote': 'Déclarer Rebelote',
     'playWithoutBelote': 'Jouer sans déclarer',
     'playWithBelote': 'Jouer et dire « Belote »',
-    'playWithRebelote': 'Jouer et dire « Rebelote »',
     'beloteAvailable': 'Belote en main',
     'chat': 'Discussion',
     'send': 'Envoyer',
@@ -329,7 +327,8 @@ class L10n {
         'À l’atout, il faut monter si possible, même sur son partenaire. '
         'Hors atout, couper ou surcouper selon les règles. '
         'Un joueur bloqué à l’atout doit jouer un atout.\n\n'
-        'Belote-rebelote : 20 points, à déclarer sur le roi et la dame d’atout. '
+        'Belote-rebelote : 20 points, à déclarer une seule fois en jouant le roi ou la dame d’atout. '
+        'La rebelote se valide ensuite automatiquement. '
         'Dix de der : 10 points.\n\n'
         'Contrat réussi si les points arrondis de l’attaque atteignent le montant. '
         'Contrat chuté : 160 points à la défense. '
@@ -428,8 +427,8 @@ class L10n {
     'noBidsYet': 'Aucune annonce',
     'matchEndTitle': 'Fin de la partie',
     'waitingTurn': 'Au tour de {name}',
-    'beloteHint': 'Jouez le roi ou la dame d’atout pour déclarer la belote.',
-    'rebeloteHint': 'Jouez la seconde carte d’atout pour la rebelote.',
+    'beloteHint':
+        'Jouez le roi ou la dame d’atout pour déclarer la belote (une seule fois).',
     'clearSession': 'Oublier la session',
     'menu': 'Menu',
     'setsWonShort': '{count} set(s)',
@@ -513,10 +512,8 @@ class L10n {
     'earlyStopContract': 'The contract can no longer be made.',
     'earlyStopCapot': 'The defense won a trick: capot failed.',
     'declareBelote': 'Declare Belote',
-    'declareRebelote': 'Declare Rebelote',
     'playWithoutBelote': 'Play without declaring',
     'playWithBelote': 'Play and say “Belote”',
-    'playWithRebelote': 'Play and say “Rebelote”',
     'beloteAvailable': 'Belote in hand',
     'chat': 'Chat',
     'send': 'Send',
@@ -565,7 +562,8 @@ class L10n {
         'When trump is led you must overtake if possible, even over partner. '
         'When a plain suit is led, cut or overtrump according to the rules. '
         'A player blocked at trump must play a trump.\n\n'
-        'Belote-rebelote: 20 points, declared on the trump king and queen. '
+        'Belote-rebelote: 20 points, declared once when playing the trump king or queen. '
+        'Rebelote then completes automatically. '
         'Last trick: 10 points.\n\n'
         'The contract is made when the attack’s rounded points reach the bid. '
         'Failed contract: 160 to the defense. '
@@ -664,8 +662,7 @@ class L10n {
     'noBidsYet': 'No bids yet',
     'matchEndTitle': 'End of match',
     'waitingTurn': '{name}’s turn',
-    'beloteHint': 'Play the trump king or queen to declare belote.',
-    'rebeloteHint': 'Play the second trump card for rebelote.',
+    'beloteHint': 'Play the trump king or queen to declare belote (once only).',
     'clearSession': 'Forget session',
     'menu': 'Menu',
     'setsWonShort': '{count} set(s)',
