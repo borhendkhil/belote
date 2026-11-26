@@ -1146,8 +1146,7 @@ void main() {
     }
   });
 
-  testWidgets(
-      'le centre affiche quatre taches floutées au lieu des cases vides', (
+  testWidgets('le centre affiche quatre carrés blancs translucides sans flou', (
     tester,
   ) async {
     final client = await makeClient();
@@ -1157,14 +1156,17 @@ void main() {
 
     final center = find.byKey(const Key('trick-center'));
     for (final seat in [0, 1, 2, 3]) {
-      expect(
-        find.byKey(Key('card-glow-$seat')),
-        findsOneWidget,
+      final glow = find.byKey(Key('card-glow-$seat'));
+      expect(glow, findsOneWidget);
+      final container = tester.widget<Container>(
+        find.descendant(of: glow, matching: find.byType(Container)),
       );
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.color, Colors.white.withValues(alpha: 0.1));
     }
     expect(
       find.descendant(of: center, matching: find.byType(ImageFiltered)),
-      findsNWidgets(4),
+      findsNothing,
     );
     expect(find.descendant(of: center, matching: find.text('B')), findsNothing);
     expect(find.byKey(const Key('slot-empty-0')), findsNothing);
@@ -1189,6 +1191,22 @@ void main() {
     );
     expect(find.descendant(of: corner, matching: find.byType(SuitBadge)),
         findsNothing);
+
+    final cornerBid = find.descendant(
+      of: corner,
+      matching: find.text('100 ♠'),
+    );
+    final cornerRow = find.ancestor(
+      of: cornerBid,
+      matching: find.byType(Row),
+    );
+    expect(
+      find.descendant(
+        of: cornerRow.first,
+        matching: find.text('Contrat de Vous'),
+      ),
+      findsOneWidget,
+    );
 
     final partner = find.byType(PlayerPod).first;
     expect(

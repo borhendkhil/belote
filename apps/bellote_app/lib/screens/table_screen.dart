@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:bellote_engine/bellote_engine.dart';
 import 'package:material_ui/material_ui.dart' hide Card;
@@ -1100,27 +1099,17 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : quatre taches de couleur de cartes, floutées, à la
-    // place des anciens emplacements vides et du disque « B ».
-    const cardTints = <Color>[
-      Color(0xFF1B2520), // noir
-      Color(0xFFB3261E), // rouge
-      Color(0xFF1B2520),
-      Color(0xFFB3261E),
-    ];
+    // Fond du tapis : quatre petits carrés blancs légèrement transparents,
+    // sans flou, à la place des anciens emplacements vides et du disque « B ».
     Widget cardGlow(int seat, Alignment alignment) => Align(
           key: ValueKey('card-glow-$seat'),
           alignment: alignment,
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
-            child: Container(
-              width: 34,
-              height: 46,
-              decoration: BoxDecoration(
-                color:
-                    cardTints[seat % cardTints.length].withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(9),
-              ),
+          child: Container(
+            width: 34,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(9),
             ),
           ),
         );
@@ -1583,39 +1572,42 @@ class _LastTrickPanel extends StatelessWidget {
                 ),
               ),
             // La couleur est déjà incluse dans le libellé du contrat : on
-            // évite d'afficher deux fois le même atout dans ce panneau.
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 104),
-                  child: Text(
-                    l10n.contractLabel(contract),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: AppTheme.goldSoft,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
+            // évite d'afficher deux fois le même atout dans ce panneau. Le
+            // contrat et le nom du déclarant sont sur la même ligne.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      l10n.contractLabel(contract),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: AppTheme.goldSoft,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 116),
-              child: Text(
-                l10n.t('contractBy', {'name': bidder}),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: AppTheme.muted,
-                  fontSize: 8,
-                  fontWeight: FontWeight.w600,
-                ),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      l10n.t('contractBy', {'name': bidder}),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: AppTheme.muted,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
