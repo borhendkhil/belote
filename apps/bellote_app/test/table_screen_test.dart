@@ -1316,9 +1316,7 @@ void main() {
     }
   });
 
-  testWidgets(
-      'le centre affiche quatre enseignes de couleur légèrement transparentes',
-      (
+  testWidgets('le centre affiche quatre enseignes blanches', (
     tester,
   ) async {
     final client = await makeClient();
@@ -1338,7 +1336,7 @@ void main() {
       final text = tester.widget<Text>(
         find.descendant(of: glow, matching: find.text(symbols[seat])),
       );
-      expect(text.style?.color, const Color(0x47FFFFFF));
+      expect(text.style?.color, Colors.white);
       expect(
         find.descendant(of: glow, matching: find.byType(Container)),
         findsNothing,

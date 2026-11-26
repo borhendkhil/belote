@@ -1190,8 +1190,8 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : uniquement les quatre enseignes, en blanc légèrement
-    // transparent, sans carré ni flou.
+    // Fond du tapis : uniquement les quatre enseignes, en blanc, sans carré
+    // ni flou.
     const suitSlots = <Suit>[
       Suit.hearts,
       Suit.spades,
@@ -1204,7 +1204,7 @@ class _TrickAreaState extends State<_TrickArea> {
           child: Text(
             suitSlots[(seat - me + 4) % suitSlots.length].symbol,
             style: const TextStyle(
-              color: Color(0x47FFFFFF),
+              color: Colors.white,
               fontSize: 20,
               fontWeight: FontWeight.w700,
             ),
