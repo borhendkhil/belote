@@ -233,7 +233,7 @@ class _CardBack extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF14513D), Color(0xFF0A2D22)],
+          colors: [Color(0xFF1C4A86), Color(0xFF061B39)],
         ),
       ),
       child: Stack(

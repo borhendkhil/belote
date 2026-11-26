@@ -35,295 +35,307 @@ class ResultOverlay extends StatelessWidget {
               padding: const EdgeInsets.all(18),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
-                child: Material(
-                  color: AppTheme.felt,
-                  borderRadius: BorderRadius.circular(24),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: AppTheme.gold.withValues(alpha: 0.4),
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.45),
-                          blurRadius: 32,
-                          offset: const Offset(0, 14),
+                // Entrée nette et courte : la carte de résultat se pose sans
+                // masquer longtemps le tapis.
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.96, end: 1),
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, scale, child) => Transform.translate(
+                    offset: Offset(0, (1 - scale) * 220),
+                    child: Transform.scale(scale: scale, child: child),
+                  ),
+                  child: Material(
+                    color: AppTheme.felt,
+                    borderRadius: BorderRadius.circular(24),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(
+                          color: AppTheme.gold.withValues(alpha: 0.4),
                         ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: (matchOver && !won
-                                        ? AppTheme.muted
-                                        : AppTheme.gold)
-                                    .withValues(alpha: 0.16),
-                                border: Border.all(
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            blurRadius: 32,
+                            offset: const Offset(0, 14),
+                          ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: (matchOver && !won
+                                          ? AppTheme.muted
+                                          : AppTheme.gold)
+                                      .withValues(alpha: 0.16),
+                                  border: Border.all(
+                                    color: matchOver && !won
+                                        ? AppTheme.muted.withValues(alpha: 0.5)
+                                        : AppTheme.gold.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                                child: Icon(
+                                  matchOver
+                                      ? (won
+                                          ? Icons.emoji_events
+                                          : Icons.sentiment_dissatisfied)
+                                      : setComplete
+                                          ? Icons.workspace_premium_outlined
+                                          : Icons.flag_outlined,
                                   color: matchOver && !won
-                                      ? AppTheme.muted.withValues(alpha: 0.5)
-                                      : AppTheme.gold.withValues(alpha: 0.5),
+                                      ? AppTheme.muted
+                                      : AppTheme.gold,
+                                  size: 20,
                                 ),
                               ),
-                              child: Icon(
-                                matchOver
-                                    ? (won
-                                        ? Icons.emoji_events
-                                        : Icons.sentiment_dissatisfied)
-                                    : setComplete
-                                        ? Icons.workspace_premium_outlined
-                                        : Icons.flag_outlined,
-                                color: matchOver && !won
-                                    ? AppTheme.muted
-                                    : AppTheme.gold,
-                                size: 20,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      matchOver
+                                          ? (won
+                                              ? l10n.t('matchWon')
+                                              : l10n.t('matchLost'))
+                                          : setComplete
+                                              ? l10n.t('setWon')
+                                              : l10n.t('dealResult'),
+                                      style: const TextStyle(
+                                        color: AppTheme.cream,
+                                        fontSize: 19,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      matchOver
+                                          ? l10n.t('matchEndTitle')
+                                          : setComplete
+                                              ? l10n.t('set', {
+                                                  'number': view.setNumber,
+                                                })
+                                              : l10n.t('dealNumber', {
+                                                  'number': view.dealsStarted,
+                                                }),
+                                      style: const TextStyle(
+                                        color: AppTheme.muted,
+                                        fontSize: 11.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (!matchOver && onDismiss != null)
+                                IconButton(
+                                  onPressed: onDismiss,
+                                  icon: const Icon(Icons.close),
+                                  color: AppTheme.muted,
+                                  tooltip: l10n.t('seeTable'),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          if (matchOver) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 10,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Row(
+                                children: [
+                                  for (final team in const [0, 1])
+                                    Expanded(
+                                      child: Column(
+                                        children: [
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              TeamDot(team: team, size: 6),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                l10n.teamName(
+                                                    team, view.myTeam),
+                                                style: const TextStyle(
+                                                  color: AppTheme.muted,
+                                                  fontSize: 10,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '${view.setsWon[team] ?? 0}',
+                                            style: TextStyle(
+                                              color: teamColor(team),
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.w900,
+                                              height: 1,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            l10n.t('matchScores'),
+                                            style: const TextStyle(
+                                              color: AppTheme.muted,
+                                              fontSize: 8.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    matchOver
-                                        ? (won
-                                            ? l10n.t('matchWon')
-                                            : l10n.t('matchLost'))
-                                        : setComplete
-                                            ? l10n.t('setWon')
-                                            : l10n.t('dealResult'),
-                                    style: const TextStyle(
-                                      color: AppTheme.cream,
-                                      fontSize: 19,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                            const SizedBox(height: 12),
+                          ],
+                          if (result != null) ...[
+                            _ContractBanner(
+                              l10n: l10n,
+                              contract: result.contract,
+                              contractMade: result.contractMade,
+                              myTeam: view.myTeam,
+                            ),
+                            if (result.earlyStopped) ...[
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppTheme.red.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: AppTheme.red.withValues(alpha: 0.35),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    matchOver
-                                        ? l10n.t('matchEndTitle')
-                                        : setComplete
-                                            ? l10n.t('set', {
-                                                'number': view.setNumber,
-                                              })
-                                            : l10n.t('dealNumber', {
-                                                'number': view.dealsStarted,
-                                              }),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.block,
+                                      size: 15,
+                                      color: Color(0xFFFFB4AB),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        result.earlyStopReason ==
+                                                'capot_defense_trick'
+                                            ? l10n.t('earlyStopCapot')
+                                            : l10n.t('earlyStopContract'),
+                                        style: const TextStyle(
+                                          color: Color(0xFFFFB4AB),
+                                          fontSize: 11.5,
+                                          height: 1.35,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _TeamScore(
+                                    team: 0,
+                                    myTeam: view.myTeam,
+                                    points: result.score.pointsFor(0),
+                                    l10n: l10n,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: _TeamScore(
+                                    team: 1,
+                                    myTeam: view.myTeam,
+                                    points: result.score.pointsFor(1),
+                                    l10n: l10n,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            _ScoreTable(l10n: l10n, result: result, view: view),
+                            const SizedBox(height: 14),
+                            _SetSummary(l10n: l10n, view: view),
+                          ] else
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 18),
+                              child: Center(
+                                child: Text(
+                                  l10n.t('waiting'),
+                                  style: const TextStyle(color: AppTheme.muted),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 18),
+                          if (matchOver)
+                            FilledButton.icon(
+                              onPressed: client.leaveRoom,
+                              icon: const Icon(Icons.home_outlined),
+                              label: Text(l10n.t('backToMenu')),
+                            )
+                          else ...[
+                            if (client.isHost)
+                              FilledButton.icon(
+                                onPressed: view.canStartNextDeal
+                                    ? client.nextDeal
+                                    : null,
+                                icon: const Icon(Icons.skip_next),
+                                label: Text(l10n.t('nextDeal')),
+                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.6,
+                                    color: AppTheme.gold,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    l10n.t('newDealSoon'),
                                     style: const TextStyle(
                                       color: AppTheme.muted,
                                       fontSize: 11.5,
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                            if (!matchOver && onDismiss != null)
-                              IconButton(
-                                onPressed: onDismiss,
-                                icon: const Icon(Icons.close),
-                                color: AppTheme.muted,
-                                tooltip: l10n.t('seeTable'),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        if (matchOver) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.16),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                for (final team in const [0, 1])
-                                  Expanded(
-                                    child: Column(
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            TeamDot(team: team, size: 6),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              l10n.teamName(team, view.myTeam),
-                                              style: const TextStyle(
-                                                color: AppTheme.muted,
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '${view.setsWon[team] ?? 0}',
-                                          style: TextStyle(
-                                            color: teamColor(team),
-                                            fontSize: 24,
-                                            fontWeight: FontWeight.w900,
-                                            height: 1,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          l10n.t('matchScores'),
-                                          style: const TextStyle(
-                                            color: AppTheme.muted,
-                                            fontSize: 8.5,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        if (result != null) ...[
-                          _ContractBanner(
-                            l10n: l10n,
-                            contract: result.contract,
-                            contractMade: result.contractMade,
-                            myTeam: view.myTeam,
-                          ),
-                          if (result.earlyStopped) ...[
-                            const SizedBox(height: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppTheme.red.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: AppTheme.red.withValues(alpha: 0.35),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.block,
-                                    size: 15,
-                                    color: Color(0xFFFFB4AB),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      result.earlyStopReason ==
-                                              'capot_defense_trick'
-                                          ? l10n.t('earlyStopCapot')
-                                          : l10n.t('earlyStopContract'),
-                                      style: const TextStyle(
-                                        color: Color(0xFFFFB4AB),
-                                        fontSize: 11.5,
-                                        height: 1.35,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _TeamScore(
-                                  team: 0,
-                                  myTeam: view.myTeam,
-                                  points: result.score.pointsFor(0),
-                                  l10n: l10n,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _TeamScore(
-                                  team: 1,
-                                  myTeam: view.myTeam,
-                                  points: result.score.pointsFor(1),
-                                  l10n: l10n,
-                                ),
+                            if (onDismiss != null) ...[
+                              const SizedBox(height: 4),
+                              TextButton(
+                                onPressed: onDismiss,
+                                child: Text(l10n.t('seeTable')),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 14),
-                          _ScoreTable(l10n: l10n, result: result, view: view),
-                          const SizedBox(height: 14),
-                          _SetSummary(l10n: l10n, view: view),
-                        ] else
-                          Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 18),
-                            child: Center(
-                              child: Text(
-                                l10n.t('waiting'),
-                                style: const TextStyle(color: AppTheme.muted),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 18),
-                        if (matchOver)
-                          FilledButton.icon(
-                            onPressed: client.leaveRoom,
-                            icon: const Icon(Icons.home_outlined),
-                            label: Text(l10n.t('backToMenu')),
-                          )
-                        else ...[
-                          if (client.isHost)
-                            FilledButton.icon(
-                              onPressed: view.canStartNextDeal
-                                  ? client.nextDeal
-                                  : null,
-                              icon: const Icon(Icons.skip_next),
-                              label: Text(l10n.t('nextDeal')),
-                            ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 1.6,
-                                  color: AppTheme.gold,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  l10n.t('newDealSoon'),
-                                  style: const TextStyle(
-                                    color: AppTheme.muted,
-                                    fontSize: 11.5,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (onDismiss != null) ...[
-                            const SizedBox(height: 4),
-                            TextButton(
-                              onPressed: onDismiss,
-                              child: Text(l10n.t('seeTable')),
-                            ),
                           ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),

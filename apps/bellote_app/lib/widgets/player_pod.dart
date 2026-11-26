@@ -19,7 +19,6 @@ class PlayerPod extends StatelessWidget {
     this.autoPlay = false,
     this.connected = true,
     this.bidLabel,
-    this.tricksWon,
     this.cardPoints,
     this.belote = false,
     this.rebelote = false,
@@ -46,7 +45,6 @@ class PlayerPod extends StatelessWidget {
   final bool autoPlay;
   final bool connected;
   final String? bidLabel;
-  final int? tricksWon;
   final int? cardPoints;
   final bool belote;
   final bool rebelote;
@@ -62,12 +60,10 @@ class PlayerPod extends StatelessWidget {
     final l10n = L10n.of(context);
     final tint = teamColor(team);
     final avatarSize = compact ? 34.0 : 42.0;
-    // Les points et les plis sont toujours affichés sous le nom, y compris
-    // dans les pod compacts de gauche et de droite.
-    final stats = [
-      if (cardPoints != null) l10n.t('pointsWon', {'points': cardPoints}),
-      if (tricksWon != null) l10n.t('tricksWon', {'count': tricksWon}),
-    ].join('  ·  ');
+    // Seuls les points sont affichés sous le nom : le nombre de plis est
+    // volontairement retiré des boîtes de joueurs pour garder le tapis lisible.
+    final stats =
+        cardPoints == null ? '' : l10n.t('pointsWon', {'points': cardPoints});
     // L'anneau n'a de sens que sur un tour humain (les bots jouent en 0,9 s).
     final showClock = isTurn &&
         turnDeadline != null &&

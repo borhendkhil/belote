@@ -308,25 +308,15 @@ void main() {
     expect(bidButton(tester).onPressed, isNull);
   });
 
-  testWidgets('indice 170/180 sans belote uniquement quand disponible', (
+  testWidgets('aucune phrase sur la belote dans le panneau d’enchères', (
     tester,
   ) async {
-    const hint = '170 / 180 : sans belote';
-
     await pumpPanel(tester, bidView(minimumBid: 90, maxBid: 180));
-    expect(find.text(hint), findsOneWidget);
-
-    await pumpPanel(tester, bidView(minimumBid: 90, maxBid: 170));
-    expect(find.text(hint), findsOneWidget);
-
-    await pumpPanel(tester, bidView(minimumBid: 90, maxBid: 160));
-    expect(find.text(hint), findsNothing);
+    expect(find.textContaining('170 / 180'), findsNothing);
+    expect(find.textContaining('sans belote'), findsNothing);
 
     await pumpPanel(tester, bidView(canBidNumbers: false, maxBid: 180));
-    expect(find.text(hint), findsNothing);
     expect(find.text('Capot seulement'), findsOneWidget);
-    // Le nombre reste indisponible, mais le choix de couleur garde le contrôle.
-    expect(find.text('90'), findsNothing);
     expect(bidButton(tester).onPressed, isNull);
     expect(capotButton(tester).onPressed, isNull);
   });

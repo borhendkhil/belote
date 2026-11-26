@@ -95,9 +95,6 @@ class _BidPanelState extends State<BidPanel> {
     final selectedAmount = amounts.contains(_amount)
         ? _amount
         : (amounts.isEmpty ? null : amounts.first);
-    final showSansBeloteHint = amounts.any(
-      (amount) => amount == 170 || amount == 180,
-    );
 
     return Container(
       decoration: BoxDecoration(
@@ -225,18 +222,6 @@ class _BidPanelState extends State<BidPanel> {
                     ),
                 ],
               ),
-              if (showSansBeloteHint)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    l10n.t('bidWithoutBeloteHint'),
-                    style: const TextStyle(
-                      color: AppTheme.goldSoft,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
               if (amounts.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SizedBox(

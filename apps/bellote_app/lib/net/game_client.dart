@@ -32,6 +32,17 @@ class NoticeEntry {
   final Map<String, dynamic> data;
 }
 
+/// Résultat d'une donne conservé pour la feuille de score.
+class DealScoreEntry {
+  const DealScoreEntry({
+    required this.dealNumber,
+    required this.result,
+  });
+
+  final int dealNumber;
+  final DealResult result;
+}
+
 class GameClient extends ChangeNotifier {
   GameClient({required this.settings});
 
@@ -75,6 +86,9 @@ class GameClient extends ChangeNotifier {
 
   List<ChatEntry> chat = [];
   final List<NoticeEntry> notices = [];
+
+  /// Historique des donnes terminées, affiché dans la feuille de score.
+  final List<DealScoreEntry> dealHistory = [];
 
   bool get isConnected =>
       _channel != null &&
@@ -271,6 +285,7 @@ class GameClient extends ChangeNotifier {
     if (rawView is Map) {
       view = PlayerView.fromJson(Map<String, dynamic>.from(rawView));
       seat = view!.seat;
+      _rememberDealResult();
       stage =
           view!.matchWinner != null ? ClientStage.ended : ClientStage.playing;
     } else if (room?.started == true) {
@@ -279,6 +294,19 @@ class GameClient extends ChangeNotifier {
       stage = ClientStage.inLobby;
     }
     notifyListeners();
+  }
+
+  /// Une seule entrée par donne, même si le serveur renvoie plusieurs états.
+  void _rememberDealResult() {
+    final view = this.view;
+    final result = view?.result;
+    if (view == null || result == null) return;
+    if (dealHistory.any((entry) => entry.dealNumber == view.dealsStarted)) {
+      return;
+    }
+    dealHistory.add(
+      DealScoreEntry(dealNumber: view.dealsStarted, result: result),
+    );
   }
 
   /// Convertit l'échéance serveur en heure locale pour que la montre reste
@@ -506,6 +534,7 @@ class GameClient extends ChangeNotifier {
     turnDuration = null;
     chat = [];
     notices.clear();
+    dealHistory.clear();
     errorCode = null;
     errorMessage = null;
   }

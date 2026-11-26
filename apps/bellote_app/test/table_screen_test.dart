@@ -7,6 +7,7 @@ import 'package:bellote_app/net/game_client.dart';
 import 'package:bellote_app/models/room_info.dart';
 import 'package:bellote_app/widgets/player_action_bubble.dart';
 import 'package:bellote_app/widgets/player_pod.dart';
+import 'package:bellote_app/widgets/score_sheet.dart';
 import 'package:bellote_app/screens/table_screen.dart';
 import 'package:bellote_app/widgets/playing_card.dart';
 import 'package:bellote_app/widgets/turn_ring.dart';
@@ -126,11 +127,12 @@ void main() {
     expect(tops.toSet().length, 1);
     expect(lefts, orderedEquals([...lefts]..sort()));
 
-    // 8 cartes d'atout en main + 4 au centre (dernier pli) + 4 dans le panneau.
+    // 8 cartes d'atout en main + 4 dans le panneau du dernier pli. Le centre
+    // ne conserve plus le pli terminé (les cartes volent vers le vainqueur).
     expect(
       find.byWidgetPredicate(
           (widget) => widget is PlayingCard && widget.isTrump),
-      findsNWidgets(16),
+      findsNWidgets(12),
     );
   });
 
@@ -462,10 +464,7 @@ void main() {
     expect((start - end).distance, greaterThan((mid - end).distance));
   });
 
-  testWidgets(
-      'les cartes jouées restent au centre et la nouvelle arrive dessus', (
-    tester,
-  ) async {
+  testWidgets('le centre ne garde que le pli en cours', (tester) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     addTearDown(tester.view.reset);
@@ -503,20 +502,10 @@ void main() {
     );
     await tester.pumpWidget(appFor(client));
     await tester.pumpAndSettle();
-    expect(cardsOnFloor(), [
-      const Card(Rank.ace, Suit.spades),
-      const Card(Rank.seven, Suit.spades),
-      const Card(Rank.eight, Suit.spades),
-      const Card(Rank.nine, Suit.spades),
-    ]);
-    final settledAce = tester.getCenter(
-      cardFinder(const Card(Rank.ace, Suit.spades)),
-    );
-    final settledNine = tester.getCenter(
-      cardFinder(const Card(Rank.nine, Suit.spades)),
-    );
+    // Le pli terminé a déjà quitté le centre : seul le panneau latéral le montre.
+    expect(cardsOnFloor(), isEmpty);
 
-    // Nouveau pli : les 4 cartes restent, la 5e se pose au-dessus.
+    // Nouveau pli : une seule carte arrive, les anciennes ne reviennent pas.
     client.view = _playingView(
       currentTrick: const [
         PlayedCard(seat: 1, card: Card(Rank.seven, Suit.clubs)),
@@ -526,20 +515,6 @@ void main() {
     );
     client.notifyListeners();
     await tester.pump();
-    // Aucune carte déjà posée n'a bougé : aucun lancer n'a été relancé.
-    expect(
-      (tester.getCenter(cardFinder(const Card(Rank.ace, Suit.spades))) -
-              settledAce)
-          .distance,
-      lessThan(0.5),
-    );
-    expect(
-      (tester.getCenter(cardFinder(const Card(Rank.nine, Suit.spades))) -
-              settledNine)
-          .distance,
-      lessThan(0.5),
-    );
-
     final flyingStart = tester.getCenter(
       cardFinder(const Card(Rank.seven, Suit.clubs)),
     );
@@ -548,13 +523,7 @@ void main() {
       cardFinder(const Card(Rank.seven, Suit.clubs)),
     );
     expect((flyingStart - flyingEnd).distance, greaterThan(3));
-    expect(cardsOnFloor(), [
-      const Card(Rank.ace, Suit.spades),
-      const Card(Rank.seven, Suit.spades),
-      const Card(Rank.eight, Suit.spades),
-      const Card(Rank.nine, Suit.spades),
-      const Card(Rank.seven, Suit.clubs),
-    ]);
+    expect(cardsOnFloor(), [const Card(Rank.seven, Suit.clubs)]);
     expect(tester.takeException(), isNull);
   });
 
@@ -754,6 +723,86 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('la feuille de score s’ouvre depuis le coin en haut à droite', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    addTearDown(tester.view.reset);
+
+    final client = await makeClient();
+    client.dealHistory.add(
+      DealScoreEntry(dealNumber: 1, result: _sampleResult()),
+    );
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final button = find.byTooltip('Feuille de score');
+    expect(button, findsOneWidget);
+    final center = tester.getCenter(button);
+    expect(center.dx, greaterThan(195));
+    expect(center.dy, lessThan(80));
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    final sheet = find.byType(ScoreSheet);
+    expect(sheet, findsOneWidget);
+    expect(
+      find.descendant(of: sheet, matching: find.text('Feuille de score')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Totaux')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('Donne 1')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: sheet, matching: find.text('100 ♠')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: sheet,
+        matching: find.textContaining('Objectif 2000'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('les cartes sont distribuées vers l’éventail', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    addTearDown(tester.view.reset);
+
+    final client = await makeClient();
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    Finder firstCard() => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width > 50 &&
+              widget.card == Card.parse('AS'),
+        );
+    final settled = tester.getCenter(firstCard());
+
+    // Une nouvelle donne ré Jouée : les cartes reviennent du centre.
+    client.view = _playingView(dealsStarted: 2);
+    client.notifyListeners();
+    await tester.pump();
+    final start = tester.getCenter(firstCard());
+    await tester.pumpAndSettle();
+    final end = tester.getCenter(firstCard());
+
+    expect((start - settled).distance, greaterThan(30));
+    expect((start - end).distance, greaterThan(30));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('une annonce de belote s\'affiche puis s\'efface',
       (tester) async {
     tester.view.devicePixelRatio = 2;
@@ -854,6 +903,63 @@ void main() {
       const Card(Rank.nine, Suit.diamonds),
       const Card(Rank.jack, Suit.hearts),
     ]);
+  });
+
+  testWidgets('un pli terminé s’envole vers le vainqueur puis quitte le centre',
+      (
+    tester,
+  ) async {
+    final client = await makeClient();
+    const completed = TrickRecord(
+      leaderSeat: 0,
+      plays: [
+        PlayedCard(seat: 0, card: Card(Rank.ace, Suit.spades)),
+        PlayedCard(seat: 1, card: Card(Rank.seven, Suit.spades)),
+        PlayedCard(seat: 2, card: Card(Rank.eight, Suit.spades)),
+        PlayedCard(seat: 3, card: Card(Rank.nine, Suit.spades)),
+      ],
+      winnerSeat: 0,
+      points: 25,
+      winningTeam: 0,
+    );
+    client.view = _playingView(
+      currentTrick: const [],
+      lastTrick: null,
+      tricksPlayed: 3,
+    );
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final center = find.byKey(const Key('trick-center'));
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNothing,
+    );
+
+    client.view = _playingView(
+      currentTrick: const [],
+      lastTrick: completed,
+      tricksPlayed: 4,
+    );
+    client.notifyListeners();
+    await tester.pump();
+
+    final flying = find.byKey(const Key('collect-1:4-AS'));
+    expect(flying, findsOneWidget);
+    final flyingCard = find.descendant(
+      of: flying,
+      matching: find.byType(PlayingCard),
+    );
+    final start = tester.getCenter(flyingCard);
+    await tester.pump(const Duration(milliseconds: 180));
+    expect((tester.getCenter(flyingCard) - start).distance, greaterThan(5));
+
+    await tester.pumpAndSettle();
+    expect(flying, findsNothing);
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNothing,
+    );
   });
 
   testWidgets('le centre ne garde que le pli, les infos vont dans les coins', (
@@ -984,6 +1090,35 @@ void main() {
   });
 }
 
+DealResult _sampleResult() => DealResult(
+      contract: const Contract(
+        type: ContractType.points,
+        amount: 100,
+        trump: Suit.spades,
+        bidderSeat: 0,
+        demandeurSeat: 0,
+        counter: CounterState.none,
+      ),
+      score: const ScoreBreakdown(
+        attackTeam: 0,
+        defenseTeam: 1,
+        rawAttack: 110,
+        rawDefense: 80,
+        roundedAttack: 110,
+        roundedDefense: 80,
+        contractMade: true,
+        attackPoints: 120,
+        defensePoints: 90,
+        earlyStopped: false,
+        capotNotCalled: false,
+      ),
+      tricksPlayed: 8,
+      earlyStopped: false,
+      cardPointsByTeam: const {0: 150, 1: 80},
+      tricksByTeam: const {0: 5, 1: 3},
+      beloteTeam: null,
+    );
+
 PlayerView _playingView({
   String phase = 'playing',
   Suit? trump = Suit.spades,
@@ -1007,6 +1142,7 @@ PlayerView _playingView({
     winningTeam: 0,
   ),
   int tricksPlayed = 3,
+  int dealsStarted = 1,
   List<GameEvent> events = const [],
   int eventSeq = 1,
   bool canDeclareBelote = false,
@@ -1077,6 +1213,6 @@ PlayerView _playingView({
     events: events,
     eventSeq: eventSeq,
     redeals: 0,
-    dealsStarted: 1,
+    dealsStarted: dealsStarted,
   );
 }

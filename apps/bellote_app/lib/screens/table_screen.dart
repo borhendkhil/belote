@@ -18,6 +18,7 @@ import '../widgets/player_pod.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/result_overlay.dart';
 import '../widgets/rules_sheet.dart';
+import '../widgets/score_sheet.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/turn_ring.dart';
 
@@ -39,6 +40,8 @@ class _TableScreenState extends State<TableScreen> {
   final Map<int, GameEvent> _seatBubbles = {};
   final Map<int, Timer> _bubbleTimers = {};
   int? _lastEventSeq;
+  int? _lastDeal;
+  bool _animateDeal = false;
 
   GameClient get client => widget.client;
 
@@ -46,6 +49,7 @@ class _TableScreenState extends State<TableScreen> {
   void initState() {
     super.initState();
     _lastEventSeq = widget.client.view?.eventSeq;
+    _lastDeal = widget.client.view?.dealsStarted;
     widget.client.addListener(_onClientChanged);
   }
 
@@ -55,6 +59,7 @@ class _TableScreenState extends State<TableScreen> {
     if (oldWidget.client != widget.client) {
       oldWidget.client.removeListener(_onClientChanged);
       _lastEventSeq = widget.client.view?.eventSeq;
+      _lastDeal = widget.client.view?.dealsStarted;
       widget.client.addListener(_onClientChanged);
     }
   }
@@ -74,6 +79,12 @@ class _TableScreenState extends State<TableScreen> {
   void _onClientChanged() {
     final view = widget.client.view;
     if (view == null) return;
+    // On n'anime que les vraies nouvelles donnes : un écran qui s'ouvre sur
+    // une partie déjà en cours affiche directement l'éventail en place.
+    if (_lastDeal != null && view.dealsStarted != _lastDeal) {
+      _animateDeal = true;
+    }
+    _lastDeal = view.dealsStarted;
     final last = _lastEventSeq;
     if (last == null) {
       _lastEventSeq = view.eventSeq;
@@ -283,8 +294,6 @@ class _TableScreenState extends State<TableScreen> {
                         view: view,
                         onLeave: () => _confirmLeave(context),
                         onCopy: _copyCode,
-                        onShowResult: () =>
-                            setState(() => _dismissedDeal = null),
                       ),
                       const GoldDivider(),
                       Expanded(
@@ -304,7 +313,7 @@ class _TableScreenState extends State<TableScreen> {
                         ),
                       ),
                       _handStatus(context, l10n, view),
-                      _hand(context, view),
+                      _hand(context, view, animateDeal: _animateDeal),
                       if (view.isBidding)
                         BidPanel(client: client, view: view)
                       else
@@ -418,7 +427,11 @@ class _TableScreenState extends State<TableScreen> {
     );
   }
 
-  Widget _hand(BuildContext context, PlayerView view) {
+  Widget _hand(
+    BuildContext context,
+    PlayerView view, {
+    required bool animateDeal,
+  }) {
     // Pendant les enchères, l'atout peut changer à chaque annonce : on fige
     // l'ordre affiché pour que les cartes ne sautent pas dans la main.
     final hand = orderedHand(
@@ -474,6 +487,15 @@ class _TableScreenState extends State<TableScreen> {
           const movement = Duration(milliseconds: 280);
           const movementCurve = Curves.easeOutCubic;
 
+          Widget dealEntrance(int index, Widget child) => animateDeal
+              ? _DealEntrance(
+                  key: ValueKey('deal-${view.dealsStarted}-${hand[index].id}'),
+                  order: index,
+                  from: Offset((center - index) * step, -110),
+                  child: child,
+                )
+              : child;
+
           return SizedBox(
             height: fanHeight,
             child: Center(
@@ -498,24 +520,31 @@ class _TableScreenState extends State<TableScreen> {
                             4 -
                             arcLift * _fanArc(i, center) -
                             (lifted.contains(i) ? liftAmount : 0),
-                        child: MouseRegion(
-                          onEnter: (_) => _setHovered(hand[i]),
-                          onExit: (_) => _setHovered(null),
-                          child: AnimatedRotation(
-                            duration: movement,
-                            curve: movementCurve,
-                            // Éventail : les cartes s'inclinent vers l'extérieur.
-                            turns: (i - center) * 0.045 / (2 * math.pi),
-                            alignment: Alignment.bottomCenter,
-                            child: PlayingCard(
-                              card: hand[i],
-                              width: cardWidth,
-                              shadow: 0.45,
-                              highlighted: canPlay && legal.contains(hand[i]),
-                              isTrump: view.trump == hand[i].suit,
-                              onTap: canPlay && legal.contains(hand[i])
-                                  ? () => _onCardTap(hand[i])
-                                  : null,
+                        // À chaque nouvelle donne, les cartes partent du centre
+                        // de la table et se posent en éventail, l'une après
+                        // l'autre. La clé inclut le numéro de donne : les cartes
+                        // déjà en main ne rejouent pas l'animation.
+                        child: dealEntrance(
+                          i,
+                          MouseRegion(
+                            onEnter: (_) => _setHovered(hand[i]),
+                            onExit: (_) => _setHovered(null),
+                            child: AnimatedRotation(
+                              duration: movement,
+                              curve: movementCurve,
+                              // Éventail : les cartes s'inclinent vers l'extérieur.
+                              turns: (i - center) * 0.045 / (2 * math.pi),
+                              alignment: Alignment.bottomCenter,
+                              child: PlayingCard(
+                                card: hand[i],
+                                width: cardWidth,
+                                shadow: 0.45,
+                                highlighted: canPlay && legal.contains(hand[i]),
+                                isTrump: view.trump == hand[i].suit,
+                                onTap: canPlay && legal.contains(hand[i])
+                                    ? () => _onCardTap(hand[i])
+                                    : null,
+                              ),
                             ),
                           ),
                         ),
@@ -568,240 +597,156 @@ class _TopBar extends StatelessWidget {
     required this.view,
     required this.onLeave,
     required this.onCopy,
-    required this.onShowResult,
   });
 
   final GameClient client;
   final PlayerView view;
   final VoidCallback onLeave;
   final VoidCallback onCopy;
-  final VoidCallback onShowResult;
 
   @override
   Widget build(BuildContext context) {
     final l10n = L10n.of(context);
     final code = client.code ?? client.room?.code ?? '';
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 380;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(4, 2, 4, 4),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: onLeave,
-                tooltip: l10n.t('leaveGame'),
-                icon: const Icon(Icons.logout, size: 19),
-                color: AppTheme.muted,
-                visualDensity: VisualDensity.compact,
-              ),
-              Flexible(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    InkWell(
-                      onTap: onCopy,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              code,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: AppTheme.gold,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 2.4,
-                              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 3, 6, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Spacer(),
+          if (code.isNotEmpty)
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: InkWell(
+                  onTap: onCopy,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppTheme.gold.withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            code,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.gold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.6,
                             ),
                           ),
-                          const SizedBox(width: 4),
-                          const Icon(
-                            Icons.copy_rounded,
-                            size: 11,
-                            color: AppTheme.muted,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Text(
-                      '${l10n.t('set', {'number': view.setNumber})}'
-                      '  ·  ${l10n.t('setTarget', {'target': view.setTarget})}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppTheme.muted,
-                        fontSize: 8.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Spacer(),
-              _ScorePill(
-                view: view,
-                onTap: view.isDealComplete ? onShowResult : null,
-              ),
-              if (!compact) ...[
-                IconButton(
-                  onPressed: () => showChatSheet(context, client),
-                  tooltip: l10n.t('chat'),
-                  icon: const Icon(Icons.forum_outlined, size: 19),
-                  color: AppTheme.goldSoft,
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  onPressed: () => showLogSheet(context, client),
-                  tooltip: l10n.t('log'),
-                  icon: const Icon(Icons.receipt_long_outlined, size: 19),
-                  color: AppTheme.goldSoft,
-                  visualDensity: VisualDensity.compact,
-                ),
-              ],
-              PopupMenuButton<String>(
-                tooltip: l10n.t('menu'),
-                icon: const Icon(
-                  Icons.more_vert,
-                  size: 19,
-                  color: AppTheme.muted,
-                ),
-                onSelected: (value) {
-                  switch (value) {
-                    case 'chat':
-                      showChatSheet(context, client);
-                    case 'log':
-                      showLogSheet(context, client);
-                    case 'rules':
-                      showRulesSheet(context);
-                    case 'settings':
-                      showSettingsSheet(context, client.settings);
-                    case 'leave':
-                      onLeave();
-                  }
-                },
-                itemBuilder: (context) => [
-                  if (compact)
-                    PopupMenuItem(
-                      value: 'chat',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.forum_outlined, size: 18),
-                        title: Text(l10n.t('chat')),
-                      ),
-                    ),
-                  if (compact)
-                    PopupMenuItem(
-                      value: 'log',
-                      child: ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(
-                          Icons.receipt_long_outlined,
-                          size: 18,
                         ),
-                        title: Text(l10n.t('log')),
-                      ),
-                    ),
-                  PopupMenuItem(
-                    value: 'rules',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.menu_book_outlined, size: 18),
-                      title: Text(l10n.t('rules')),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.copy_rounded,
+                          size: 11,
+                          color: AppTheme.muted,
+                        ),
+                      ],
                     ),
                   ),
-                  PopupMenuItem(
-                    value: 'settings',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.tune, size: 18),
-                      title: Text(l10n.t('settings')),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'leave',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.logout, size: 18),
-                      title: Text(l10n.t('leaveGame')),
-                    ),
-                  ),
-                ],
+                ),
+              ),
+            ),
+          const SizedBox(width: 2),
+          IconButton(
+            onPressed: () =>
+                showScoreSheet(context, client: client, view: view),
+            tooltip: l10n.t('scoreSheet'),
+            icon: const Icon(Icons.scoreboard_outlined, size: 19),
+            color: AppTheme.goldSoft,
+            visualDensity: VisualDensity.compact,
+          ),
+          IconButton(
+            onPressed: () => showChatSheet(context, client),
+            tooltip: l10n.t('chat'),
+            icon: const Icon(Icons.forum_outlined, size: 19),
+            color: AppTheme.goldSoft,
+            visualDensity: VisualDensity.compact,
+          ),
+          PopupMenuButton<String>(
+            tooltip: l10n.t('menu'),
+            icon: const Icon(
+              Icons.home_outlined,
+              size: 19,
+              color: AppTheme.goldSoft,
+            ),
+            onSelected: (value) {
+              switch (value) {
+                case 'log':
+                  showLogSheet(context, client);
+                case 'score':
+                  showScoreSheet(context, client: client, view: view);
+                case 'rules':
+                  showRulesSheet(context);
+                case 'settings':
+                  showSettingsSheet(context, client.settings);
+                case 'leave':
+                  onLeave();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'score',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.scoreboard_outlined, size: 18),
+                  title: Text(l10n.t('scoreSheet')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'log',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.receipt_long_outlined, size: 18),
+                  title: Text(l10n.t('log')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'rules',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.menu_book_outlined, size: 18),
+                  title: Text(l10n.t('rules')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.tune, size: 18),
+                  title: Text(l10n.t('settings')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'leave',
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.logout, size: 18),
+                  title: Text(l10n.t('leaveGame')),
+                ),
               ),
             ],
           ),
-        );
-      },
-    );
-  }
-}
-
-class _ScorePill extends StatelessWidget {
-  const _ScorePill({required this.view, this.onTap});
-
-  final PlayerView view;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = L10n.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.22),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppTheme.gold.withValues(alpha: 0.22)),
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TeamDot(team: 0, size: 6),
-                const SizedBox(width: 4),
-                Text(
-                  '${view.setScores[0] ?? 0}',
-                  style: TextStyle(
-                    color: teamColor(0),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 3),
-                const Text(
-                  '–',
-                  style: TextStyle(color: AppTheme.muted, fontSize: 9),
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  '${view.setScores[1] ?? 0}',
-                  style: TextStyle(
-                    color: teamColor(1),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                TeamDot(team: 1, size: 6),
-              ],
-            ),
-            Text(
-              l10n.t('setsWonShort', {
-                'count': (view.setsWon[0] ?? 0) + (view.setsWon[1] ?? 0),
-              }),
-              style: const TextStyle(color: AppTheme.muted, fontSize: 7.5),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -846,7 +791,6 @@ class _TableArea extends StatelessWidget {
         autoPlay: player?.autoPlay ?? false,
         connected: player?.connected ?? false,
         bidLabel: _bidForSeat(seat),
-        tricksWon: view.isPlaying ? view.tricksByTeam[seat % 2] : null,
         cardPoints: view.isPlaying ? view.cardPointsByTeam[seat % 2] : null,
         belote: view.beloteTeam == (seat % 2),
         compact: compact,
@@ -923,15 +867,32 @@ class _TrickArea extends StatefulWidget {
 }
 
 class _TrickAreaState extends State<_TrickArea> {
-  /// Toutes les cartes déjà posées au centre, dans l'ordre où elles ont été
-  /// jouées. Rien n'est ramassé : une nouvelle carte atterrit au-dessus de la
-  /// précédente et reste là jusqu'à la donne suivante.
+  /// Cartes du pli en cours : elles restent au centre jusqu'à la fin du pli,
+  /// puis s'envolent vers le joueur qui l'a remporté.
   List<PlayedCard> _floor = const [];
+
+  /// Pli terminé en train de quitter le centre.
+  final List<_TrickFlight> _flights = [];
+
+  /// Évite de rejouer l'envol du même pli si le serveur renvoie plusieurs états.
+  final Set<String> _seenTricks = {};
+
+  String _trickKey(PlayerView view) =>
+      '${view.dealsStarted}:${view.tricksPlayed}';
+
+  static bool _sameCards(List<PlayedCard> a, List<PlayedCard> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].card.id != b[i].card.id) return false;
+    }
+    return true;
+  }
 
   @override
   void initState() {
     super.initState();
-    _floor = _seed(widget.view);
+    _floor = List.of(widget.view.currentTrick);
+    _seenTricks.add(_trickKey(widget.view));
   }
 
   @override
@@ -942,23 +903,38 @@ class _TrickAreaState extends State<_TrickArea> {
     if (view.dealsStarted != previous.dealsStarted ||
         view.tricksPlayed < previous.tricksPlayed ||
         view.phase != 'playing') {
-      _floor = _seed(view);
+      setState(() {
+        _floor = List.of(view.currentTrick);
+        _flights.clear();
+        _seenTricks
+          ..clear()
+          ..add(_trickKey(view));
+      });
       return;
     }
-    final known = _floor.map((play) => play.card.id).toSet();
-    final incoming = <PlayedCard>[
-      ...?view.lastTrick?.plays,
-      ...view.currentTrick,
-    ].where((play) => known.add(play.card.id)).toList();
-    if (incoming.isNotEmpty) _floor = [..._floor, ...incoming];
+
+    final key = _trickKey(view);
+    final trick = view.lastTrick;
+    final completed = view.tricksPlayed > previous.tricksPlayed &&
+        trick != null &&
+        _seenTricks.add(key);
+    if (completed) {
+      _flights.add(
+        _TrickFlight(
+          id: key,
+          plays: List.of(trick.plays),
+          winnerSeat: view.lastTrickWinnerSeat ?? trick.winnerSeat,
+        ),
+      );
+    }
+    if (completed || !_sameCards(_floor, view.currentTrick)) {
+      setState(() => _floor = List.of(view.currentTrick));
+    }
   }
 
-  List<PlayedCard> _seed(PlayerView view) {
-    final seen = <String>{};
-    return [
-      ...?view.lastTrick?.plays,
-      ...view.currentTrick,
-    ].where((play) => seen.add(play.card.id)).toList();
+  void _finishFlight(String id) {
+    if (!mounted) return;
+    setState(() => _flights.removeWhere((flight) => flight.id == id));
   }
 
   @override
@@ -967,13 +943,10 @@ class _TrickAreaState extends State<_TrickArea> {
     final view = widget.view;
     final me = client.seat ?? view.seat;
     final trump = view.trump;
-    // Toutes les cartes restent sur le tapis. Seule la nouvelle est animée ;
-    // les précédentes gardent la même clé et ne bougent plus.
+    // Seul le pli en cours occupe le centre. Les plis terminés sont en vol
+    // vers leur vainqueur, puis disparaissent définitivement du tapis.
     final plays = _floor;
-    final currentSource = view.currentTrick.isNotEmpty
-        ? view.currentTrick
-        : (view.lastTrick?.plays ?? const <PlayedCard>[]);
-    final master = trump == null ? null : trickMaster(currentSource, trump);
+    final master = trump == null ? null : trickMaster(view.currentTrick, trump);
     final masterCard = master?.card.id;
 
     // Pli légèrement incliné : chaque carte garde son coin lisible.
@@ -983,6 +956,17 @@ class _TrickAreaState extends State<_TrickArea> {
       (me + 1) % 4: -0.09,
       (me + 3) % 4: 0.09,
     };
+
+    Widget cardFace(PlayedCard play, {bool highlighted = false}) =>
+        Transform.rotate(
+          angle: tilts[play.seat] ?? 0,
+          child: PlayingCard(
+            card: play.card,
+            width: 40,
+            highlighted: highlighted,
+            isTrump: trump == play.card.suit,
+          ),
+        );
 
     Widget placeholder(int seat, Alignment alignment) => Align(
           key: ValueKey('slot-empty-$seat'),
@@ -1011,15 +995,7 @@ class _TrickAreaState extends State<_TrickArea> {
         child: _PlayedCardAnimation(
           key: ValueKey('flight-${play.seat}-${play.card.id}'),
           from: _entryOffset(play.seat, me),
-          child: Transform.rotate(
-            angle: tilts[play.seat] ?? 0,
-            child: PlayingCard(
-              card: play.card,
-              width: 40,
-              highlighted: masterCard == play.card.id,
-              isTrump: trump == play.card.suit,
-            ),
-          ),
+          child: cardFace(play, highlighted: masterCard == play.card.id),
         ),
       );
     }
@@ -1032,8 +1008,8 @@ class _TrickAreaState extends State<_TrickArea> {
     };
     final playedSeats = plays.map((play) => play.seat).toSet();
 
-    // Le centre ne contient que le pli. L'ordre de la Stack suit l'ordre de
-    // jeu : première carte en bas, dernière carte posée au-dessus.
+    // Le centre ne contient que le pli en cours. L'ordre de la Stack suit
+    // l'ordre de jeu : première carte en bas, dernière carte posée au-dessus.
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: SizedBox(
@@ -1048,7 +1024,20 @@ class _TrickAreaState extends State<_TrickArea> {
                 placeholder(entry.key, entry.value),
             for (final play in plays)
               slot(play, positions[play.seat] ?? Alignment.center),
-            if (plays.isEmpty)
+            for (final flight in _flights)
+              for (final play in flight.plays)
+                Align(
+                  key: ValueKey(
+                    'collect-${flight.id}-${play.card.id}',
+                  ),
+                  alignment: positions[play.seat] ?? Alignment.center,
+                  child: _TrickCollectAnimation(
+                    to: _entryOffset(flight.winnerSeat, me),
+                    onDone: () => _finishFlight(flight.id),
+                    child: cardFace(play),
+                  ),
+                ),
+            if (plays.isEmpty && _flights.isEmpty)
               Center(
                 child: Container(
                   width: 42,
@@ -1140,6 +1129,158 @@ Offset _entryOffset(int seat, int me) {
   if (seat == (me + 2) % 4) return const Offset(0, -145);
   if (seat == (me + 1) % 4) return const Offset(-150, 0);
   return const Offset(150, 0);
+}
+
+/// Fait arriver une carte de la main depuis le centre du tapis jusqu'à sa
+/// place dans l'éventail, avec un léger décalage pour chaque carte.
+class _DealEntrance extends StatefulWidget {
+  const _DealEntrance({
+    super.key,
+    required this.order,
+    required this.from,
+    required this.child,
+  });
+
+  final int order;
+  final Offset from;
+  final Widget child;
+
+  @override
+  State<_DealEntrance> createState() => _DealEntranceState();
+}
+
+class _DealEntranceState extends State<_DealEntrance>
+    with SingleTickerProviderStateMixin {
+  static const _flight = Duration(milliseconds: 380);
+
+  late final int _delayMs = math.min(widget.order * 28, 220).toInt();
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: _flight.inMilliseconds + _delayMs),
+    // Même logique que le lancer : l'animation reste visible même si le
+    // téléphone désactive les animations système.
+    animationBehavior: AnimationBehavior.preserve,
+  );
+  late final Animation<double> _entrance = CurvedAnimation(
+    parent: _controller,
+    curve: Interval(
+      _delayMs / (_flight.inMilliseconds + _delayMs),
+      1,
+      curve: Curves.easeOutCubic,
+    ),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _entrance,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _entrance.value;
+        final remaining = 1 - t;
+        return Opacity(
+          opacity: (t * 4).clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(
+              widget.from.dx * remaining,
+              widget.from.dy * remaining,
+            ),
+            child: Transform.scale(scale: 0.86 + 0.14 * t, child: child),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Pli terminé qui quitte le centre en direction du vainqueur.
+class _TrickFlight {
+  const _TrickFlight({
+    required this.id,
+    required this.plays,
+    required this.winnerSeat,
+  });
+
+  final String id;
+  final List<PlayedCard> plays;
+  final int winnerSeat;
+}
+
+/// Ramasse les cartes du pli vers le siège du vainqueur, sans les conserver au
+/// centre de la table une fois l'animation terminée.
+class _TrickCollectAnimation extends StatefulWidget {
+  const _TrickCollectAnimation({
+    required this.to,
+    required this.onDone,
+    required this.child,
+  });
+
+  final Offset to;
+  final VoidCallback onDone;
+  final Widget child;
+
+  @override
+  State<_TrickCollectAnimation> createState() => _TrickCollectAnimationState();
+}
+
+class _TrickCollectAnimationState extends State<_TrickCollectAnimation>
+    with SingleTickerProviderStateMixin {
+  static const _duration = Duration(milliseconds: 420);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _duration,
+    animationBehavior: AnimationBehavior.preserve,
+  )
+    ..addStatusListener((status) {
+      if (status == AnimationStatus.completed) widget.onDone();
+    })
+    ..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) {
+        final progress = Curves.easeInCubic.transform(_controller.value);
+        return Opacity(
+          opacity: 1 - progress,
+          child: Transform.translate(
+            offset: Offset(
+              widget.to.dx * progress,
+              widget.to.dy * progress,
+            ),
+            child: Transform.scale(
+              scale: 1 - 0.35 * progress,
+              child: Transform.rotate(
+                angle: progress * math.pi * 0.8,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 /// Fait glisser la carte jouée depuis son siège vers sa position au centre.
@@ -1453,12 +1594,9 @@ class _SelfBar extends StatelessWidget {
                 ),
                 Text(
                   view.isPlaying
-                      ? '${l10n.t('pointsWon', {
-                              'points': view.cardPointsByTeam[team] ?? 0
-                            })}'
-                          '  ·  ${l10n.t('tricksWon', {
-                              'count': view.tricksByTeam[team] ?? 0
-                            })}'
+                      ? l10n.t('pointsWon', {
+                          'points': view.cardPointsByTeam[team] ?? 0,
+                        })
                       : '${view.hand.length} ${l10n.t('cards')}',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 8.5),
                 ),

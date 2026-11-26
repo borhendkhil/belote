@@ -1,15 +1,15 @@
 import 'package:material_ui/material_ui.dart';
 
 abstract final class AppTheme {
-  static const felt = Color(0xFF0B3D2E);
-  static const feltDeep = Color(0xFF06281E);
-  static const feltLight = Color(0xFF14513D);
+  static const felt = Color(0xFF102F63);
+  static const feltDeep = Color(0xFF061B39);
+  static const feltLight = Color(0xFF1C4A86);
   static const gold = Color(0xFFE7BD6A);
   static const goldSoft = Color(0xFFF1D79E);
   static const cream = Color(0xFFF8F2E2);
   static const ink = Color(0xFF16211C);
   static const red = Color(0xFFB3261E);
-  static const muted = Color(0xFF9DB3A8);
+  static const muted = Color(0xFFA9BCD6);
 
   static ThemeData dark() {
     final scheme = ColorScheme.fromSeed(
@@ -110,7 +110,7 @@ abstract final class AppTheme {
         ),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: const Color(0xFF233B31),
+        backgroundColor: const Color(0xFF173A66),
         contentTextStyle: const TextStyle(color: cream),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
