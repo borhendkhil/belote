@@ -1099,20 +1099,40 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : quatre petits carrés blancs légèrement transparents,
-    // sans flou, à la place des anciens emplacements vides et du disque « B ».
-    Widget cardGlow(int seat, Alignment alignment) => Align(
-          key: ValueKey('card-glow-$seat'),
-          alignment: alignment,
-          child: Container(
-            width: 34,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(9),
+    // Fond du tapis : quatre emplacements aux couleurs des cartes, légèrement
+    // transparents et sans flou, à la place des anciens emplacements vides.
+    const suitSlots = <Suit>[
+      Suit.hearts,
+      Suit.spades,
+      Suit.diamonds,
+      Suit.clubs,
+    ];
+    Widget cardGlow(int seat, Alignment alignment) {
+      final suit = suitSlots[(seat - me + 4) % suitSlots.length];
+      final ink = suit.isRed ? AppTheme.red : AppTheme.ink;
+      return Align(
+        key: ValueKey('card-glow-$seat'),
+        alignment: alignment,
+        child: Container(
+          width: 34,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Center(
+            child: Text(
+              suit.symbol,
+              style: TextStyle(
+                color: ink.withValues(alpha: 0.45),
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-        );
+        ),
+      );
+    }
 
     Widget slot(PlayedCard play, Alignment alignment) {
       var from = _entryOffset(play.seat, me);

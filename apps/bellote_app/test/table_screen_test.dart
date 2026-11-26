@@ -1146,7 +1146,9 @@ void main() {
     }
   });
 
-  testWidgets('le centre affiche quatre carrés blancs translucides sans flou', (
+  testWidgets(
+      'le centre affiche quatre enseignes de couleur légèrement transparentes',
+      (
     tester,
   ) async {
     final client = await makeClient();
@@ -1155,14 +1157,19 @@ void main() {
     await tester.pumpAndSettle();
 
     final center = find.byKey(const Key('trick-center'));
-    for (final seat in [0, 1, 2, 3]) {
+    const symbols = <String>['♥', '♠', '♦', '♣'];
+    for (var seat = 0; seat < 4; seat++) {
       final glow = find.byKey(Key('card-glow-$seat'));
       expect(glow, findsOneWidget);
+      expect(
+        find.descendant(of: glow, matching: find.text(symbols[seat])),
+        findsOneWidget,
+      );
       final container = tester.widget<Container>(
         find.descendant(of: glow, matching: find.byType(Container)),
       );
       final decoration = container.decoration! as BoxDecoration;
-      expect(decoration.color, Colors.white.withValues(alpha: 0.1));
+      expect(decoration.color, Colors.white.withValues(alpha: 0.08));
     }
     expect(
       find.descendant(of: center, matching: find.byType(ImageFiltered)),
