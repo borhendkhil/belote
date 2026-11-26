@@ -3,7 +3,6 @@ import 'package:material_ui/material_ui.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../widgets/common.dart';
-import '../widgets/playing_card.dart';
 import '../widgets/turn_ring.dart';
 
 class PlayerPod extends StatelessWidget {
@@ -12,7 +11,6 @@ class PlayerPod extends StatelessWidget {
     required this.seat,
     required this.name,
     required this.team,
-    required this.cardCount,
     required this.isTurn,
     this.isDealer = false,
     this.isBot = false,
@@ -32,7 +30,6 @@ class PlayerPod extends StatelessWidget {
   final int seat;
   final String name;
   final int team;
-  final int cardCount;
   final bool isTurn;
   final bool isDealer;
   final bool isBot;
@@ -257,31 +254,6 @@ class PlayerPod extends StatelessWidget {
                       ),
                     ],
                   ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (cardCount > 0)
-                  CardBackStack(
-                    count: cardCount,
-                    width: compact ? 11 : 13,
-                    maxVisible: 3,
-                  )
-                else
-                  const SizedBox(height: 16),
-                if (cardCount > 0) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    '$cardCount',
-                    style: const TextStyle(
-                      color: AppTheme.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
               ],
             ),
             if (belote || rebelote) ...[

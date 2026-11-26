@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:bellote_engine/bellote_engine.dart';
 import 'package:material_ui/material_ui.dart' hide Card;
 
@@ -304,60 +302,4 @@ class _CardBackPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class CardBackStack extends StatelessWidget {
-  const CardBackStack({
-    super.key,
-    required this.count,
-    this.width = 22,
-    this.maxVisible = 5,
-  });
-
-  final int count;
-  final double width;
-  final int maxVisible;
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = math.min(count, maxVisible);
-    final height = width * 1.42;
-    return SizedBox(
-      width: width + (visible - 1) * width * 0.34 + 2,
-      height: height,
-      child: Stack(
-        children: [
-          for (var i = 0; i < visible; i++)
-            Positioned(
-              left: i * width * 0.34,
-              top: 0,
-              child: PlayingCard(width: width, faceDown: true),
-            ),
-          if (count > maxVisible)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppTheme.feltDeep,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: AppTheme.gold.withValues(alpha: 0.4),
-                  ),
-                ),
-                child: Text(
-                  '$count',
-                  style: const TextStyle(
-                    color: AppTheme.goldSoft,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 }

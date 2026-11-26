@@ -35,6 +35,7 @@ class _TableScreenState extends State<TableScreen> {
 
   GameEvent? _announcement;
   Timer? _announcementTimer;
+  Timer? _forcedPlayTimer;
   int? _lastEventSeq;
 
   GameClient get client => widget.client;
@@ -60,6 +61,7 @@ class _TableScreenState extends State<TableScreen> {
   void dispose() {
     widget.client.removeListener(_onClientChanged);
     _announcementTimer?.cancel();
+    _forcedPlayTimer?.cancel();
     super.dispose();
   }
 
@@ -68,6 +70,7 @@ class _TableScreenState extends State<TableScreen> {
   void _onClientChanged() {
     final view = widget.client.view;
     if (view == null) return;
+    _scheduleForcedPlay(view);
     final last = _lastEventSeq;
     if (last == null) {
       _lastEventSeq = view.eventSeq;
@@ -223,6 +226,27 @@ class _TableScreenState extends State<TableScreen> {
   void _setHovered(Card? card) {
     if (_hoveredCard == card) return;
     setState(() => _hoveredCard = card);
+  }
+
+  /// Filet de sécurité côté client pour l'unique carte légale.
+  ///
+  /// Le serveur programme déjà un délai court quand il détecte lui-même la
+  /// carte forcée : on le laisse agir. Sinon (serveur plus ancien, ou état
+  /// reçu sans délai), c'est l'application qui joue la carte après un court
+  /// délai, pour ne jamais laisser le joueur bloqué sur sa dernière carte.
+  void _scheduleForcedPlay(PlayerView view) {
+    _forcedPlayTimer?.cancel();
+    _forcedPlayTimer = null;
+    if (!shouldAutoPlayForcedCard(view, client.turnDuration)) return;
+    _forcedPlayTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      final current = client.view;
+      if (current == null ||
+          !shouldAutoPlayForcedCard(current, client.turnDuration)) {
+        return;
+      }
+      client.play(current.legalCards.single);
+    });
   }
 
   @override
@@ -495,6 +519,29 @@ class _TableScreenState extends State<TableScreen> {
   }
 }
 
+/// Vrai si l'application peut jouer seule l'unique carte légale.
+///
+/// Un délai serveur court signifie que le serveur a déjà programmé cette carte
+/// forcée : on évite alors un double envoi. Une carte de belote non encore
+/// déclarée garde toujours le choix du joueur.
+bool shouldAutoPlayForcedCard(PlayerView view, Duration? turnDuration) {
+  if (!view.isPlaying || !view.isMyTurn || view.legalCards.length != 1) {
+    return false;
+  }
+  if (turnDuration != null && turnDuration.inMilliseconds < 5000) {
+    return false;
+  }
+  final card = view.legalCards.single;
+  final beloteChoice = view.holdsBelote &&
+      view.trump != null &&
+      card.suit == view.trump &&
+      (card.rank == Rank.king || card.rank == Rank.queen) &&
+      !view.beloteDeclared &&
+      !view.beloteDeclined &&
+      !view.beloteCompleted;
+  return !beloteChoice;
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({
     required this.client,
@@ -761,7 +808,6 @@ class _TableArea extends StatelessWidget {
         seat: seat,
         name: l10n.seatName(room, seat, me: me),
         team: seat % 2,
-        cardCount: view.handCounts[seat] ?? 0,
         isTurn: view.turnSeat == seat,
         isDealer: view.dealerSeat == seat,
         isBot: player?.isBot ?? true,
@@ -1115,9 +1161,10 @@ class _TrickAreaState extends State<_TrickArea>
   }
 }
 
-/// Réordonne la main pour l'affichage : l'atout d'abord, puis les couleurs
-/// alternées noir/rouge (BRBR ou RBRB). Deux cartes voisines n'ont ainsi
-/// jamais la même couleur, ce qui rend la main beaucoup plus lisible.
+/// Réordonne la main pour l'affichage : l'atout d'abord (sauf s'il est le seul
+/// représentant de son camp, cas où on l'intercale), puis les couleurs
+/// alternées noir/rouge (BRBR ou RBRB). Deux blocs voisins n'ont ainsi jamais
+/// la même teinte, ce qui rend la main beaucoup plus lisible.
 List<Card> orderedHand(List<Card> hand, Suit? trump) {
   // Seules les couleurs réellement en main comptent : sinon une couleur absente
   // consommerait un tour d'alternance et deux couleurs de même teinte se
@@ -1132,12 +1179,25 @@ List<Card> orderedHand(List<Card> hand, Suit? trump) {
     Suit.diamonds,
   ].where(present.contains).toList();
   final order = <Suit>[];
-  var wantBlack = true;
+  // Sans atout, on commence par la couleur la plus fournie : c'est la seule
+  // façon d'éviter deux blocs de même teinte quand l'autre camp est épuisé.
+  var wantBlack = blacks.length >= reds.length;
   if (trump != null && present.contains(trump)) {
-    order.add(trump);
-    (trump.isRed ? reds : blacks).remove(trump);
+    final trumpIsRed = trump.isRed;
+    (trumpIsRed ? reds : blacks).remove(trump);
+    final sameColor = trumpIsRed ? reds : blacks;
+    final opposite = trumpIsRed ? blacks : reds;
+    if (sameColor.isEmpty && opposite.length > 1) {
+      // L'atout est le seul représentant de son camp : on l'intercale entre
+      // les deux couleurs adverses plutôt que de laisser deux rouges (ou deux
+      // noirs) se toucher.
+      order.add(opposite.removeAt(0));
+      order.add(trump);
+    } else {
+      order.add(trump);
+    }
     // Après un atout rouge, on enchaîne obligatoirement sur du noir.
-    wantBlack = trump.isRed;
+    wantBlack = trumpIsRed;
   }
   // Alterne tant qu'il reste des deux couleurs, puis vide la couleur restante.
   while (blacks.isNotEmpty || reds.isNotEmpty) {

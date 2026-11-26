@@ -165,6 +165,35 @@ void main() {
     }
   });
 
+  test('la main affichée suit les points de chaque couleur', () {
+    final raw = [
+      Card.parse('7S'),
+      Card.parse('AS'),
+      Card.parse('KS'),
+      Card.parse('JS'),
+      Card.parse('9S'),
+      Card.parse('10S'),
+      Card.parse('QS'),
+      Card.parse('8S'),
+      Card.parse('7H'),
+      Card.parse('KH'),
+      Card.parse('JH'),
+      Card.parse('AH'),
+      Card.parse('10H'),
+      Card.parse('QH'),
+    ];
+    final hand = orderedHand(sortHand(raw, trump: Suit.spades), Suit.spades);
+    expect(
+      hand.where((card) => card.suit == Suit.spades).map((card) => card.id),
+      ['JS', '9S', 'AS', '10S', 'KS', 'QS', '8S', '7S'],
+    );
+    // Hors atout : A, 10, R, D, V, 9, 8, 7.
+    expect(
+      hand.where((card) => card.suit == Suit.hearts).map((card) => card.id),
+      ['AH', '10H', 'KH', 'QH', 'JH', '7H'],
+    );
+  });
+
   test('une couleur absente ne casse pas l\'alternance', () {
     // Atout cœur, aucune carte de pique en main : après le cœur ce doit être
     // du noir (trèfle), pas du carreau.
@@ -183,6 +212,61 @@ void main() {
     }
     expect(suits, [Suit.hearts, Suit.clubs, Suit.diamonds]);
     expect(ordered.length, hand.length);
+  });
+
+  test(
+      'l’alternance est respectée dès la distribution, même à couleurs inégales',
+      () {
+    List<Suit> suitBlocks(List<Card> cards) {
+      final blocks = <Suit>[];
+      for (final card in cards) {
+        if (blocks.isEmpty || blocks.last != card.suit) blocks.add(card.suit);
+      }
+      return blocks;
+    }
+
+    // Au début des enchères il n'y a pas encore d'atout : avec une seule
+    // couleur noire et deux rouges, on doit commencer par un rouge (RBR).
+    final noTrump = [
+      Card.parse('AS'),
+      Card.parse('10S'),
+      Card.parse('KH'),
+      Card.parse('9H'),
+      Card.parse('AD'),
+      Card.parse('8D'),
+    ];
+    expect(
+      suitBlocks(orderedHand(noTrump, null)),
+      [Suit.hearts, Suit.spades, Suit.diamonds],
+    );
+
+    // Inversement, deux noirs et un rouge donnent BRB.
+    expect(
+      suitBlocks(orderedHand(
+        [
+          Card.parse('KH'),
+          Card.parse('7H'),
+          Card.parse('AS'),
+          Card.parse('9C')
+        ],
+        null,
+      )),
+      [Suit.spades, Suit.hearts, Suit.clubs],
+    );
+
+    // Atout seul représentant de son camp : on l'intercale entre les deux
+    // couleurs adverses plutôt que de laisser deux noirs se toucher.
+    final loneTrump = [
+      Card.parse('KH'),
+      Card.parse('7H'),
+      Card.parse('AS'),
+      Card.parse('10S'),
+      Card.parse('9C'),
+    ];
+    expect(
+      suitBlocks(orderedHand(loneTrump, Suit.hearts)),
+      [Suit.spades, Suit.hearts, Suit.clubs],
+    );
   });
 
   testWidgets('les cartes gardent leur place pendant les enchères', (
@@ -551,6 +635,63 @@ void main() {
     expect(flatShadow.blurRadius, liftedShadow.blurRadius);
   });
 
+  test('la dernière carte est jouée seule, sauf choix de belote', () {
+    const card = Card(Rank.ace, Suit.spades);
+    const shortServerTimer = Duration(milliseconds: 260);
+
+    // Une seule carte légale : le client la joue si le serveur n'a pas déjà
+    // programmé son propre délai court.
+    expect(
+      shouldAutoPlayForcedCard(
+        _playingView(cards: const [card], legal: const [card]),
+        null,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldAutoPlayForcedCard(
+        _playingView(cards: const [card], legal: const [card]),
+        const Duration(seconds: 45),
+      ),
+      isTrue,
+    );
+
+    // Le serveur gère déjà la carte : aucun double envoi.
+    expect(
+      shouldAutoPlayForcedCard(
+        _playingView(cards: const [card], legal: const [card]),
+        shortServerTimer,
+      ),
+      isFalse,
+    );
+
+    // Plusieurs cartes légales ou tour adverse : aucun auto-play.
+    expect(
+      shouldAutoPlayForcedCard(
+        _playingView(
+          cards: const [card, Card(Rank.king, Suit.spades)],
+          legal: const [card, Card(Rank.king, Suit.spades)],
+        ),
+        null,
+      ),
+      isFalse,
+    );
+
+    // Une carte de belote non déclarée garde le choix du joueur.
+    expect(
+      shouldAutoPlayForcedCard(
+        _playingView(
+          cards: const [Card(Rank.king, Suit.spades)],
+          legal: const [Card(Rank.king, Suit.spades)],
+          holdsBelote: true,
+          canDeclareBelote: true,
+        ),
+        null,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('les cartes glissent quand l’éventail se resserre', (
     tester,
   ) async {
@@ -706,6 +847,7 @@ PlayerView _playingView({
   int eventSeq = 1,
   bool canDeclareBelote = false,
   bool beloteDeclared = false,
+  bool holdsBelote = false,
 }) {
   final hand = cards ??
       [
@@ -762,7 +904,7 @@ PlayerView _playingView({
     auctionHistory: const [],
     auctionClosed: auctionClosed,
     canDeclareBelote: canDeclareBelote,
-    holdsBelote: false,
+    holdsBelote: holdsBelote,
     beloteDeclared: beloteDeclared,
     beloteCompleted: false,
     beloteDeclined: false,

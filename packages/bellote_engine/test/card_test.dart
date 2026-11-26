@@ -60,6 +60,40 @@ void main() {
       );
     });
 
+    test('la main classe chaque couleur par ses points, pas par rangs', () {
+      const trump = Suit.spades;
+      final hand = [
+        Card.parse('7S'),
+        Card.parse('AS'),
+        Card.parse('KS'),
+        Card.parse('10S'),
+        Card.parse('JS'),
+        Card.parse('QS'),
+        Card.parse('9S'),
+        Card.parse('8S'),
+      ];
+      expect(
+        sortHand(hand, trump: trump).map((card) => card.id),
+        ['JS', '9S', 'AS', '10S', 'KS', 'QS', '8S', '7S'],
+      );
+
+      // Hors atout : A, 10, R, D, V, 9, 8, 7.
+      final mixed = [
+        Card.parse('7H'),
+        Card.parse('KH'),
+        Card.parse('JH'),
+        Card.parse('AH'),
+        Card.parse('9H'),
+        Card.parse('10H'),
+        Card.parse('QH'),
+        Card.parse('JS'),
+      ];
+      expect(
+        sortHand(mixed, trump: trump).map((card) => card.id),
+        ['AH', '10H', 'KH', 'QH', 'JH', '9H', '7H', 'JS'],
+      );
+    });
+
     test('parsing et sérialisation', () {
       const card = Card(Rank.ten, Suit.diamonds);
       expect(card.id, '10D');

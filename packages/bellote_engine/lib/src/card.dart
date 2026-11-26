@@ -169,8 +169,13 @@ List<Card> fullDeck() => [
 int totalDeckPoints(Suit trump) =>
     fullDeck().fold(0, (sum, card) => sum + card.points(trump));
 
-/// Trie une main pour l'affichage : couleurs groupées, atout en dernier,
-/// rangs décroissants à l'intérieur de chaque couleur.
+/// Trie une main pour l'affichage : couleurs groupées, atout en dernier.
+///
+/// Chaque couleur suit ses propres points, pas l'ordre naturel des rangs :
+/// - atout : V, 9, A, 10, R, D, 8, 7 ;
+/// - hors atout : A, 10, R, D, V, 9, 8, 7.
+///
+/// La force départage les cartes qui valent 0 point.
 List<Card> sortHand(List<Card> hand, {Suit? trump}) {
   final sorted = [...hand];
   sorted.sort((a, b) {
@@ -179,7 +184,13 @@ List<Card> sortHand(List<Card> hand, {Suit? trump}) {
     }
     final suitCompare = a.suit.index.compareTo(b.suit.index);
     if (suitCompare != 0) return suitCompare;
-    return b.rank.faceValue.compareTo(a.rank.faceValue);
+
+    final atTrump = trump != null && a.suit == trump;
+    final points = atTrump ? trumpPoints : plainPoints;
+    final strength = atTrump ? trumpStrength : plainStrength;
+    final pointsCompare = points[b.rank]!.compareTo(points[a.rank]!);
+    if (pointsCompare != 0) return pointsCompare;
+    return strength[b.rank]!.compareTo(strength[a.rank]!);
   });
   return sorted;
 }
