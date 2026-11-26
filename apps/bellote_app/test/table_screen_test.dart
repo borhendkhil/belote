@@ -33,6 +33,27 @@ class PlayRecordingClient extends GameClient {
   }
 }
 
+/// Simule la réponse du serveur : la carte quitte la main et rejoint le pli.
+class PlayAdvancingClient extends GameClient {
+  PlayAdvancingClient({required super.settings});
+
+  final List<Card> played = [];
+
+  @override
+  Future<void> play(Card card, {bool belote = false}) async {
+    played.add(card);
+    final previous = view!;
+    view = _playingView(
+      cards: previous.hand.where((other) => other.id != card.id).toList(),
+      currentTrick: [
+        PlayedCard(seat: previous.seat, card: card),
+        ...previous.currentTrick,
+      ],
+    );
+    notifyListeners();
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -430,6 +451,53 @@ void main() {
     // Le lancer finit par un demi-tour ; seule subsiste l'inclinaison voulue
     // du pli au centre de la table.
     expect(rotationOf(card)?.abs() ?? 0, closeTo(0.09, 0.02));
+  });
+
+  testWidgets('ma carte quitte la main sans disparaître avant le lancer', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({'locale': 'fr'});
+    final settings = await SettingsController.load();
+    final client = PlayAdvancingClient(settings: settings)
+      ..seat = 0
+      ..code = 'ABCDE'
+      ..view = _playingView();
+
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    Finder handCard() => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width > 50 &&
+              widget.card == const Card(Rank.ace, Suit.spades),
+        );
+    final handCenter = tester.getCenter(handCard());
+
+    await tester.tap(handCard());
+    await tester.pump(Duration.zero);
+
+    Finder flyingCard() => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width == 40 &&
+              widget.card == const Card(Rank.ace, Suit.spades),
+        );
+    expect(flyingCard(), findsOneWidget);
+    final start = tester.getCenter(flyingCard());
+    // La carte volante démarre de l'emplacement de la carte de la main (à une
+    // image d'animation près) : pas de disparition puis de réapparition au
+    // centre du tapis.
+    expect((start - handCenter).distance, lessThan(20));
+
+    await tester.pumpAndSettle();
+    final end = tester.getCenter(flyingCard());
+    expect((start - end).distance, greaterThan(30));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(

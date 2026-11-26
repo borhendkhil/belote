@@ -24,6 +24,25 @@ import '../widgets/score_table.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/turn_ring.dart';
 
+/// Position réelle d'une carte de la main au moment où le joueur la joue.
+/// Elle sert à faire partir le lancer exactement de l'emplacement qu'elle
+/// occupait dans l'éventail, sans « saut » visuel.
+class HandPlayOrigin {
+  const HandPlayOrigin({
+    required this.cardId,
+    required this.center,
+    required this.width,
+    required this.angle,
+  });
+
+  final String cardId;
+  final Offset center;
+  final double width;
+
+  /// Rotation de la carte dans l'éventail, en radians.
+  final double angle;
+}
+
 class TableScreen extends StatefulWidget {
   const TableScreen({super.key, required this.client});
 
@@ -50,6 +69,15 @@ class _TableScreenState extends State<TableScreen> {
   /// nouvelle donne), les cartes restantes se replacent immédiatement : seul
   /// le soulèvement au survol reste animé.
   String _renderedHand = '';
+  List<String> _lastHandIds = [];
+  double _lastHandCenter = 0;
+  double _lastCardWidth = 0;
+
+  /// Clés stables des cartes de l'éventail, pour relever leur position réelle
+  /// au moment où le serveur retire une carte jouée de la main.
+  final Map<String, GlobalKey> _handCardKeys = {};
+
+  HandPlayOrigin? _lastPlayOrigin;
 
   GameClient get client => widget.client;
 
@@ -68,6 +96,8 @@ class _TableScreenState extends State<TableScreen> {
       oldWidget.client.removeListener(_onClientChanged);
       _dealAnimationTimer?.cancel();
       _animateDeal = false;
+      _lastPlayOrigin = null;
+      _lastHandIds = const [];
       _lastEventSeq = widget.client.view?.eventSeq;
       _lastDeal = widget.client.view?.dealsStarted;
       widget.client.addListener(_onClientChanged);
@@ -92,7 +122,13 @@ class _TableScreenState extends State<TableScreen> {
     if (view == null) return;
     // On n'anime que les vraies nouvelles donnes : un écran qui s'ouvre sur
     // une partie déjà en cours affiche directement l'éventail en place.
-    if (_lastDeal != null && view.dealsStarted != _lastDeal) {
+    final newDeal = _lastDeal != null && view.dealsStarted != _lastDeal;
+    if (!newDeal) {
+      final detected = _playedHandOrigin(view);
+      if (detected != null) _lastPlayOrigin = detected;
+    }
+    if (newDeal) {
+      _lastPlayOrigin = null;
       _dealAnimationTimer?.cancel();
       _animateDeal = true;
       // L'animation de distribution ne joue qu'une fois par donne. Sans ce
@@ -173,6 +209,29 @@ class _TableScreenState extends State<TableScreen> {
     await Clipboard.setData(ClipboardData(text: code));
     if (!mounted) return;
     showLocalizedSnack(context, L10n.of(context).t('copied'));
+  }
+
+  /// Détecte l'unique carte qui vient de quitter la main et relève sa position
+  /// réelle avant que l'éventail ne soit reconstruit. Couvre aussi la carte
+  /// jouée automatiquement par le serveur à l'échéance du timer.
+  HandPlayOrigin? _playedHandOrigin(PlayerView view) {
+    if (_lastHandIds.isEmpty || view.phase != 'playing') return null;
+    final remaining = view.hand.map((card) => card.id).toSet();
+    final removed =
+        _lastHandIds.where((id) => !remaining.contains(id)).toList();
+    if (removed.length != 1) return null;
+    final id = removed.first;
+    final box =
+        _handCardKeys[id]?.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return HandPlayOrigin(
+      cardId: id,
+      center:
+          box.localToGlobal(Offset(box.size.width / 2, box.size.height / 2)),
+      width: _lastCardWidth,
+      // Même formule que l'AnimatedRotation de l'éventail.
+      angle: (_lastHandIds.indexOf(id) - _lastHandCenter) * 0.045,
+    );
   }
 
   Future<void> _onCardTap(Card card) async {
@@ -319,6 +378,7 @@ class _TableScreenState extends State<TableScreen> {
                           client: client,
                           view: view,
                           bubbles: Map<int, GameEvent>.from(_seatBubbles),
+                          playOrigin: _lastPlayOrigin,
                         ),
                       ),
                       _SelfBar(
@@ -460,11 +520,6 @@ class _TableScreenState extends State<TableScreen> {
     // cartes restantes prennent leur nouvelle place sans glisser.
     final signature = hand.map((card) => card.id).join(',');
     final animateReflow = _renderedHand == signature;
-    if (!animateReflow) {
-      WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _renderedHand = signature,
-      );
-    }
     if (hand.isEmpty) return const SizedBox(height: 10);
     final legal = view.legalCards.toSet();
     return Padding(
@@ -496,6 +551,15 @@ class _TableScreenState extends State<TableScreen> {
           // On réserve la hauteur du soulèvement pour que la carte levée ne
           // vienne pas chevaucher la ligne de statut au-dessus de la main.
           final fanHeight = cardHeight + arcLift + 12 + liftAmount;
+
+          if (!animateReflow) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _renderedHand = signature;
+              _lastHandIds = hand.map((card) => card.id).toList();
+              _lastHandCenter = center;
+              _lastCardWidth = cardWidth;
+            });
+          }
 
           final canPlay = view.isPlaying && view.isMyTurn;
           final playable = <int>[];
@@ -569,6 +633,10 @@ class _TableScreenState extends State<TableScreen> {
                               turns: (i - center) * 0.045 / (2 * math.pi),
                               alignment: Alignment.bottomCenter,
                               child: PlayingCard(
+                                key: _handCardKeys.putIfAbsent(
+                                  hand[i].id,
+                                  () => GlobalKey(),
+                                ),
                                 card: hand[i],
                                 width: cardWidth,
                                 shadow: 0.45,
@@ -790,11 +858,13 @@ class _TableArea extends StatelessWidget {
     required this.client,
     required this.view,
     required this.bubbles,
+    this.playOrigin,
   });
 
   final GameClient client;
   final PlayerView view;
   final Map<int, GameEvent> bubbles;
+  final HandPlayOrigin? playOrigin;
 
   @override
   Widget build(BuildContext context) {
@@ -851,7 +921,11 @@ class _TableArea extends StatelessWidget {
                       children: [
                         pod(left, compact: true),
                         Expanded(
-                          child: _TrickArea(client: client, view: view),
+                          child: _TrickArea(
+                            client: client,
+                            view: view,
+                            playOrigin: playOrigin,
+                          ),
                         ),
                         pod(right, compact: true),
                       ],
@@ -905,16 +979,25 @@ const _throwDuration = Duration(milliseconds: 520);
 const _dealEntranceReset = Duration(milliseconds: 700);
 
 class _TrickArea extends StatefulWidget {
-  const _TrickArea({required this.client, required this.view});
+  const _TrickArea({
+    required this.client,
+    required this.view,
+    this.playOrigin,
+  });
 
   final GameClient client;
   final PlayerView view;
+  final HandPlayOrigin? playOrigin;
 
   @override
   State<_TrickArea> createState() => _TrickAreaState();
 }
 
 class _TrickAreaState extends State<_TrickArea> {
+  /// Repère du centre du tapis : sert à convertir la position globale de la
+  /// carte jouée en décalage local pour le lancer.
+  final GlobalKey _centerKey = GlobalKey();
+
   /// Cartes du pli en cours : elles restent au centre jusqu'à la fin du pli,
   /// puis s'envolent vers le joueur qui l'a remporté.
   List<PlayedCard> _floor = const [];
@@ -1033,6 +1116,25 @@ class _TrickAreaState extends State<_TrickArea> {
         );
 
     Widget slot(PlayedCard play, Alignment alignment) {
+      var from = _entryOffset(play.seat, me);
+      double? startScale;
+      var angleDelta = math.pi;
+      final origin = widget.playOrigin;
+      // La carte du joueur doit partir de sa vraie place dans l'éventail.
+      // Les cartes des autres sièges gardent leur entrée depuis le pod.
+      if (origin != null && play.seat == me && origin.cardId == play.card.id) {
+        final box = _centerKey.currentContext?.findRenderObject() as RenderBox?;
+        if (box != null && box.hasSize) {
+          final topLeft = box.localToGlobal(Offset.zero);
+          final slotCenter = Offset(
+            topLeft.dx + (alignment.x + 1) * box.size.width / 2,
+            topLeft.dy + (alignment.y + 1) * box.size.height / 2,
+          );
+          from = origin.center - slotCenter;
+          startScale = (origin.width / 40).clamp(1.0, 2.0).toDouble();
+          angleDelta = origin.angle - (tilts[play.seat] ?? 0);
+        }
+      }
       // La clé porte sur le créneau lui-même, pas seulement sur l'animation :
       // sans elle, Flutter réutilise un créneau vide pour la nouvelle carte et
       // déplace toutes les cartes déjà posées d'un index, ce qui relance leur
@@ -1042,7 +1144,9 @@ class _TrickAreaState extends State<_TrickArea> {
         alignment: alignment,
         child: _PlayedCardAnimation(
           key: ValueKey('flight-${play.seat}-${play.card.id}'),
-          from: _entryOffset(play.seat, me),
+          from: from,
+          startScale: startScale,
+          angleDelta: angleDelta,
           child: cardFace(play, highlighted: masterCard == play.card.id),
         ),
       );
@@ -1061,10 +1165,11 @@ class _TrickAreaState extends State<_TrickArea> {
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: SizedBox(
-        key: const Key('trick-center'),
+        key: _centerKey,
         width: 168,
         height: 128,
         child: Stack(
+          key: const Key('trick-center'),
           clipBehavior: Clip.none,
           children: [
             for (final entry in positions.entries)
@@ -1337,10 +1442,17 @@ class _PlayedCardAnimation extends StatefulWidget {
     super.key,
     required this.from,
     required this.child,
+    this.startScale,
+    this.angleDelta = math.pi,
   });
 
   final Offset from;
   final Widget child;
+
+  /// Quand la carte vient de la main du joueur, elle conserve sa taille et sa
+  /// rotation initiales : la transition se fait sans coupure visuelle.
+  final double? startScale;
+  final double angleDelta;
 
   @override
   State<_PlayedCardAnimation> createState() => _PlayedCardAnimationState();
@@ -1377,12 +1489,18 @@ class _PlayedCardAnimationState extends State<_PlayedCardAnimation>
         final remaining = 1 - travel;
         // Trajectoire rectiligne, sans arc.
         final offset = Offset(from.dx * remaining, from.dy * remaining);
-        // Un demi-tour complet pendant le vol.
-        final angle = remaining * math.pi;
-        // Elle part plus grande, puis se pose.
-        final scale = 1.22 - 0.22 * Curves.easeOutBack.transform(t);
+        // Un demi-tour pour les autres sièges ; pour le joueur, on part de
+        // l'orientation réelle de sa carte dans l'éventail.
+        final angle = remaining * widget.angleDelta;
+        final fromHand = widget.startScale != null;
+        // Elle part de sa taille dans la main, puis se pose au format du pli.
+        final scale = fromHand
+            ? 1 +
+                (widget.startScale! - 1) *
+                    Curves.easeOutCubic.transform(remaining)
+            : 1.22 - 0.22 * Curves.easeOutBack.transform(t);
         return Opacity(
-          opacity: (t * 10).clamp(0.0, 1.0),
+          opacity: fromHand ? 1.0 : (t * 10).clamp(0.0, 1.0),
           child: Transform.translate(
             offset: offset,
             child: Transform.rotate(
