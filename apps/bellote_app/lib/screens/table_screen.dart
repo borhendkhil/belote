@@ -762,8 +762,6 @@ class _TopBar extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(width: 2),
-              ScoreTable(client: client, view: view, rows: compact ? 1 : 2),
             ],
           );
         },
@@ -822,6 +820,7 @@ class _TableArea extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final tight = constraints.maxHeight < 320;
+        final compactScore = tight || constraints.maxWidth < 380;
         return Stack(
           clipBehavior: Clip.none,
           children: [
@@ -844,6 +843,16 @@ class _TableArea extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              child: ScoreTable(
+                client: client,
+                view: view,
+                rows: compactScore ? 1 : 2,
+                compact: compactScore,
               ),
             ),
             if (!tight && (view.lastTrick != null || view.contract != null))

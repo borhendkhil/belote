@@ -19,6 +19,16 @@ void main() {
 
     expect(find.text('Belote Contrée'), findsOneWidget);
     expect(find.byType(AppLogo), findsOneWidget);
+
+    final logoImage = find.descendant(
+      of: find.byType(AppLogo),
+      matching: find.byType(Image),
+    );
+    expect(tester.widget<Image>(logoImage).fit, BoxFit.cover);
+    expect(
+      find.ancestor(of: logoImage, matching: find.byType(ClipOval)),
+      findsOneWidget,
+    );
     expect(
       find.widgetWithText(FilledButton, 'Créer une partie'),
       findsOneWidget,

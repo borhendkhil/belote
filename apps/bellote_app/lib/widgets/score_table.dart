@@ -16,11 +16,16 @@ class ScoreTable extends StatelessWidget {
     required this.client,
     required this.view,
     this.rows = 2,
+    this.compact = false,
   });
 
   final GameClient client;
   final PlayerView view;
   final int rows;
+
+  /// Version réduite pour les petits écrans : une seule donne récente et des
+  /// colonnes plus serrées, afin de rester dans le coin sans gêner le joueur.
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +42,7 @@ class ScoreTable extends StatelessWidget {
       Color color = AppTheme.cream,
     }) {
       final style = AppTheme.handwriting(
-        size: header ? 12 : 15,
+        size: header ? (compact ? 10 : 12) : (compact ? 13 : 15),
         color: color,
         weight: header ? FontWeight.w700 : FontWeight.w600,
       );
@@ -64,7 +69,7 @@ class ScoreTable extends StatelessWidget {
     }
 
     final table = Table(
-      defaultColumnWidth: const FixedColumnWidth(34),
+      defaultColumnWidth: FixedColumnWidth(compact ? 26 : 34),
       border: TableBorder(
         horizontalInside: BorderSide(
           color: AppTheme.gold.withValues(alpha: 0.22),
@@ -112,7 +117,10 @@ class ScoreTable extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: Container(
           key: const Key('score-table'),
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 3 : 5,
+            vertical: compact ? 2 : 3,
+          ),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(10),

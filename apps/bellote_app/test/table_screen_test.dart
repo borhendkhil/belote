@@ -729,7 +729,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('la feuille de score s’ouvre depuis le coin en haut à droite', (
+  testWidgets('la feuille de score s’ouvre depuis le coin en haut à gauche', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 3;
@@ -759,8 +759,8 @@ void main() {
     );
 
     final center = tester.getCenter(table);
-    expect(center.dx, greaterThan(195));
-    expect(center.dy, lessThan(80));
+    expect(center.dx, lessThan(195));
+    expect(center.dy, lessThan(211));
 
     await tester.tap(table);
     await tester.pumpAndSettle();
