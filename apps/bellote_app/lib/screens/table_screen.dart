@@ -1190,30 +1190,26 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : uniquement les quatre enseignes, dans leurs couleurs de
-    // carte légèrement transparentes, sans carré ni flou.
+    // Fond du tapis : uniquement les quatre enseignes, en blanc, sans carré
+    // ni flou.
     const suitSlots = <Suit>[
       Suit.hearts,
       Suit.spades,
       Suit.diamonds,
       Suit.clubs,
     ];
-    Widget cardGlow(int seat, Alignment alignment) {
-      final suit = suitSlots[(seat - me + 4) % suitSlots.length];
-      final ink = suit.isRed ? AppTheme.red : AppTheme.ink;
-      return Align(
-        key: ValueKey('card-glow-$seat'),
-        alignment: alignment,
-        child: Text(
-          suit.symbol,
-          style: TextStyle(
-            color: ink.withValues(alpha: 0.55),
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
+    Widget cardGlow(int seat, Alignment alignment) => Align(
+          key: ValueKey('card-glow-$seat'),
+          alignment: alignment,
+          child: Text(
+            suitSlots[(seat - me + 4) % suitSlots.length].symbol,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-      );
-    }
+        );
 
     Widget slot(PlayedCard play, Alignment alignment) {
       var from = _entryOffset(play.seat, me);

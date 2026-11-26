@@ -1316,7 +1316,7 @@ void main() {
     }
   });
 
-  testWidgets('le centre affiche quatre enseignes aux couleurs des cartes', (
+  testWidgets('le centre affiche quatre enseignes blanches', (
     tester,
   ) async {
     final client = await makeClient();
@@ -1326,12 +1326,6 @@ void main() {
 
     final center = find.byKey(const Key('trick-center'));
     const symbols = <String>['♥', '♠', '♦', '♣'];
-    final inks = <Color>[
-      AppTheme.red.withValues(alpha: 0.55),
-      AppTheme.ink.withValues(alpha: 0.55),
-      AppTheme.red.withValues(alpha: 0.55),
-      AppTheme.ink.withValues(alpha: 0.55),
-    ];
     for (var seat = 0; seat < 4; seat++) {
       final glow = find.byKey(Key('card-glow-$seat'));
       expect(glow, findsOneWidget);
@@ -1342,7 +1336,7 @@ void main() {
       final text = tester.widget<Text>(
         find.descendant(of: glow, matching: find.text(symbols[seat])),
       );
-      expect(text.style?.color, inks[seat]);
+      expect(text.style?.color, Colors.white);
       expect(
         find.descendant(of: glow, matching: find.byType(Container)),
         findsNothing,
