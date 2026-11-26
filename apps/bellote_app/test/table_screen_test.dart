@@ -1146,6 +1146,30 @@ void main() {
     }
   });
 
+  testWidgets(
+      'le centre affiche quatre taches floutées au lieu des cases vides', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    client.view = _playingView(currentTrick: const [], lastTrick: null);
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final center = find.byKey(const Key('trick-center'));
+    for (final seat in [0, 1, 2, 3]) {
+      expect(
+        find.byKey(Key('card-glow-$seat')),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.descendant(of: center, matching: find.byType(ImageFiltered)),
+      findsNWidgets(4),
+    );
+    expect(find.descendant(of: center, matching: find.text('B')), findsNothing);
+    expect(find.byKey(const Key('slot-empty-0')), findsNothing);
+  });
+
   testWidgets('le contrat est affiché une seule fois, à côté du nom', (
     tester,
   ) async {
@@ -1171,10 +1195,20 @@ void main() {
       find.descendant(of: partner, matching: find.textContaining('Partenaire')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: partner, matching: find.textContaining('100 ♠')),
-      findsOneWidget,
+    final nameText = find.descendant(
+      of: partner,
+      matching: find.text('Partenaire'),
     );
+    final bidText = find.descendant(
+      of: partner,
+      matching: find.text('100 ♠'),
+    );
+    expect(nameText, findsOneWidget);
+    expect(bidText, findsOneWidget);
+    // Le contrat est un texte distinct placé dans la même ligne que le nom.
+    final sameRow = find.ancestor(of: bidText, matching: find.byType(Row));
+    expect(
+        find.descendant(of: sameRow.first, matching: nameText), findsOneWidget);
     expect(find.text('100 ♠'), findsNWidgets(2));
   });
 
@@ -1245,6 +1279,18 @@ void main() {
         .map((widget) => widget.color)
         .toSet();
     expect(colors.length, 3);
+  });
+
+  testWidgets('les quatre boîtes de joueurs utilisent le même format compact', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final pods = tester.widgetList<PlayerPod>(find.byType(PlayerPod)).toList();
+    expect(pods.length, 3);
+    expect(pods.every((pod) => pod.compact), isTrue);
   });
 
   testWidgets('table fits a small phone without overflow', (tester) async {

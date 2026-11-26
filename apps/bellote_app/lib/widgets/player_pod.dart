@@ -283,26 +283,43 @@ class PlayerPod extends StatelessWidget {
             if (compact) ...[
               const SizedBox(height: 4),
               SizedBox(
-                width: 72,
-                child: Text(
-                  bidLabel == null || bidLabel!.isEmpty
-                      ? name
-                      : '$name $bidLabel',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppTheme.cream,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+                width: 78,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppTheme.cream,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (bidLabel != null && bidLabel!.isNotEmpty) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        bidLabel!,
+                        style: const TextStyle(
+                          color: AppTheme.gold,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
             if (stats.isNotEmpty) ...[
               const SizedBox(height: 2),
               SizedBox(
-                width: compact ? 72 : null,
+                width: compact ? 78 : null,
                 child: Text(
                   stats,
                   maxLines: 1,

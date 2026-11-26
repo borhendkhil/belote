@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:bellote_engine/bellote_engine.dart';
 import 'package:material_ui/material_ui.dart' hide Card;
@@ -913,7 +914,7 @@ class _TableArea extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
               child: Column(
                 children: [
-                  Center(child: pod(partner, compact: tight)),
+                  Center(child: pod(partner, compact: true)),
                   const SizedBox(height: 2),
                   Expanded(
                     child: Row(
@@ -1099,17 +1100,26 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    Widget placeholder(int seat, Alignment alignment) => Align(
-          key: ValueKey('slot-empty-$seat'),
+    // Fond du tapis : quatre taches de couleur de cartes, floutées, à la
+    // place des anciens emplacements vides et du disque « B ».
+    const cardTints = <Color>[
+      Color(0xFF1B2520), // noir
+      Color(0xFFB3261E), // rouge
+      Color(0xFF1B2520),
+      Color(0xFFB3261E),
+    ];
+    Widget cardGlow(int seat, Alignment alignment) => Align(
+          key: ValueKey('card-glow-$seat'),
           alignment: alignment,
-          child: Container(
-            width: 40,
-            height: 58,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.07),
-                width: 1,
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+            child: Container(
+              width: 34,
+              height: 46,
+              decoration: BoxDecoration(
+                color:
+                    cardTints[seat % cardTints.length].withValues(alpha: 0.22),
+                borderRadius: BorderRadius.circular(9),
               ),
             ),
           ),
@@ -1158,8 +1168,6 @@ class _TrickAreaState extends State<_TrickArea> {
       (me + 1) % 4: const Alignment(-0.34, 0),
       (me + 3) % 4: const Alignment(0.34, 0),
     };
-    final playedSeats = plays.map((play) => play.seat).toSet();
-
     // Le centre ne contient que le pli en cours. L'ordre de la Stack suit
     // l'ordre de jeu : première carte en bas, dernière carte posée au-dessus.
     return FittedBox(
@@ -1173,8 +1181,7 @@ class _TrickAreaState extends State<_TrickArea> {
           clipBehavior: Clip.none,
           children: [
             for (final entry in positions.entries)
-              if (!playedSeats.contains(entry.key))
-                placeholder(entry.key, entry.value),
+              cardGlow(entry.key, entry.value),
             for (final play in plays)
               slot(play, positions[play.seat] ?? Alignment.center),
             for (final flight in _flights)
@@ -1190,30 +1197,6 @@ class _TrickAreaState extends State<_TrickArea> {
                     child: cardFace(play),
                   ),
                 ),
-            if (plays.isEmpty && _flights.isEmpty)
-              Center(
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black.withValues(alpha: 0.14),
-                    border: Border.all(
-                      color: AppTheme.gold.withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'B',
-                      style: TextStyle(
-                        color: AppTheme.gold,
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
