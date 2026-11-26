@@ -13,6 +13,7 @@ import '../widgets/bid_panel.dart';
 import '../widgets/chat_sheet.dart';
 import '../widgets/common.dart';
 import '../widgets/log_sheet.dart';
+import '../widgets/player_action_bubble.dart';
 import '../widgets/player_pod.dart';
 import '../widgets/playing_card.dart';
 import '../widgets/result_overlay.dart';
@@ -35,7 +36,8 @@ class _TableScreenState extends State<TableScreen> {
 
   GameEvent? _announcement;
   Timer? _announcementTimer;
-  Timer? _forcedPlayTimer;
+  final Map<int, GameEvent> _seatBubbles = {};
+  final Map<int, Timer> _bubbleTimers = {};
   int? _lastEventSeq;
 
   GameClient get client => widget.client;
@@ -61,7 +63,9 @@ class _TableScreenState extends State<TableScreen> {
   void dispose() {
     widget.client.removeListener(_onClientChanged);
     _announcementTimer?.cancel();
-    _forcedPlayTimer?.cancel();
+    for (final timer in _bubbleTimers.values) {
+      timer.cancel();
+    }
     super.dispose();
   }
 
@@ -70,20 +74,44 @@ class _TableScreenState extends State<TableScreen> {
   void _onClientChanged() {
     final view = widget.client.view;
     if (view == null) return;
-    _scheduleForcedPlay(view);
     final last = _lastEventSeq;
     if (last == null) {
       _lastEventSeq = view.eventSeq;
       return;
     }
     _lastEventSeq = view.eventSeq;
+
+    final fresh = view.events.where((event) => event.seq > last).toList();
+    var bubblesChanged = false;
+    for (final event in fresh) {
+      final key = actionBubbleKey(event.type);
+      if (key == null) continue;
+      final seat = event.data['seat'] as int?;
+      if (seat == null) continue;
+      _bubbleTimers[seat]?.cancel();
+      _seatBubbles[seat] = event;
+      _bubbleTimers[seat] = Timer(actionBubbleDuration, () {
+        if (!mounted) return;
+        setState(() {
+          _seatBubbles.remove(seat);
+          _bubbleTimers.remove(seat);
+        });
+      });
+      bubblesChanged = true;
+    }
+
     final latest = latestBeloteEvent(view.events, last);
-    if (latest == null) return;
-    _announcementTimer?.cancel();
-    setState(() => _announcement = latest);
-    _announcementTimer = Timer(const Duration(milliseconds: 2800), () {
-      if (mounted) setState(() => _announcement = null);
-    });
+    if (latest != null) {
+      _announcementTimer?.cancel();
+      _announcementTimer = Timer(const Duration(milliseconds: 2800), () {
+        if (mounted) setState(() => _announcement = null);
+      });
+    }
+    if (bubblesChanged || latest != null) {
+      setState(() {
+        if (latest != null) _announcement = latest;
+      });
+    }
   }
 
   Future<void> _confirmLeave(BuildContext context) async {
@@ -228,27 +256,6 @@ class _TableScreenState extends State<TableScreen> {
     setState(() => _hoveredCard = card);
   }
 
-  /// Filet de sécurité côté client pour l'unique carte légale.
-  ///
-  /// Le serveur programme déjà un délai court quand il détecte lui-même la
-  /// carte forcée : on le laisse agir. Sinon (serveur plus ancien, ou état
-  /// reçu sans délai), c'est l'application qui joue la carte après un court
-  /// délai, pour ne jamais laisser le joueur bloqué sur sa dernière carte.
-  void _scheduleForcedPlay(PlayerView view) {
-    _forcedPlayTimer?.cancel();
-    _forcedPlayTimer = null;
-    if (!shouldAutoPlayForcedCard(view, client.turnDuration)) return;
-    _forcedPlayTimer = Timer(const Duration(milliseconds: 700), () {
-      if (!mounted) return;
-      final current = client.view;
-      if (current == null ||
-          !shouldAutoPlayForcedCard(current, client.turnDuration)) {
-        return;
-      }
-      client.play(current.legalCards.single);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -281,9 +288,21 @@ class _TableScreenState extends State<TableScreen> {
                       ),
                       const GoldDivider(),
                       Expanded(
-                        child: _TableArea(client: client, view: view),
+                        child: _TableArea(
+                          client: client,
+                          view: view,
+                          bubbles: Map<int, GameEvent>.from(_seatBubbles),
+                        ),
                       ),
-                      _SelfBar(client: client, view: view),
+                      _SelfBar(
+                        client: client,
+                        view: view,
+                        bubble: actionBubbleFor(
+                          _seatBubbles[view.seat],
+                          l10n,
+                          view.seat,
+                        ),
+                      ),
                       _handStatus(context, l10n, view),
                       _hand(context, view),
                       if (view.isBidding)
@@ -519,27 +538,28 @@ class _TableScreenState extends State<TableScreen> {
   }
 }
 
-/// Vrai si l'application peut jouer seule l'unique carte légale.
-///
-/// Un délai serveur court signifie que le serveur a déjà programmé cette carte
-/// forcée : on évite alors un double envoi. Une carte de belote non encore
-/// déclarée garde toujours le choix du joueur.
-bool shouldAutoPlayForcedCard(PlayerView view, Duration? turnDuration) {
-  if (!view.isPlaying || !view.isMyTurn || view.legalCards.length != 1) {
-    return false;
-  }
-  if (turnDuration != null && turnDuration.inMilliseconds < 5000) {
-    return false;
-  }
-  final card = view.legalCards.single;
-  final beloteChoice = view.holdsBelote &&
-      view.trump != null &&
-      card.suit == view.trump &&
-      (card.rank == Rank.king || card.rank == Rank.queen) &&
-      !view.beloteDeclared &&
-      !view.beloteDeclined &&
-      !view.beloteCompleted;
-  return !beloteChoice;
+/// Vrai seulement avant la première carte du pli : la pièce d'ouverture est
+/// retirée dès que le joueur concerné a joué (ou dès qu'un autre a ouvert).
+bool shouldShowLeadCoin(PlayerView view, int seat) =>
+    view.isPlaying && view.currentTrick.isEmpty && view.turnSeat == seat;
+
+/// Construit la bulle d'action éventuelle d'un siège à partir de l'événement
+/// reçu, sans jamais produire de bulle pour l'ouverture du pli.
+Widget? actionBubbleFor(
+  GameEvent? event,
+  L10n l10n,
+  int seat, {
+  bool compact = false,
+}) {
+  if (event == null) return null;
+  final key = actionBubbleKey(event.type);
+  if (key == null) return null;
+  return PlayerActionBubble(
+    action: event.type,
+    label: l10n.t(key),
+    seat: seat,
+    compact: compact,
+  );
 }
 
 class _TopBar extends StatelessWidget {
@@ -788,10 +808,15 @@ class _ScorePill extends StatelessWidget {
 }
 
 class _TableArea extends StatelessWidget {
-  const _TableArea({required this.client, required this.view});
+  const _TableArea({
+    required this.client,
+    required this.view,
+    required this.bubbles,
+  });
 
   final GameClient client;
   final PlayerView view;
+  final Map<int, GameEvent> bubbles;
 
   @override
   Widget build(BuildContext context) {
@@ -810,6 +835,13 @@ class _TableArea extends StatelessWidget {
         team: seat % 2,
         isTurn: view.turnSeat == seat,
         isDealer: view.dealerSeat == seat,
+        isLeading: shouldShowLeadCoin(view, seat),
+        bubble: actionBubbleFor(
+          bubbles[seat],
+          l10n,
+          seat,
+          compact: compact,
+        ),
         isBot: player?.isBot ?? true,
         autoPlay: player?.autoPlay ?? false,
         connected: player?.connected ?? false,
@@ -850,7 +882,7 @@ class _TableArea extends StatelessWidget {
                 ],
               ),
             ),
-            if (view.lastTrick != null && !tight)
+            if (!tight && (view.lastTrick != null || view.contract != null))
               Positioned(
                 top: 0,
                 right: 0,
@@ -890,81 +922,70 @@ class _TrickArea extends StatefulWidget {
   State<_TrickArea> createState() => _TrickAreaState();
 }
 
-class _TrickAreaState extends State<_TrickArea>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _gather = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 180),
-    // Le ramassage doit rester visible même si les animations système sont
-    // désactivées sur le téléphone.
-    animationBehavior: AnimationBehavior.preserve,
-  );
+class _TrickAreaState extends State<_TrickArea> {
+  /// Toutes les cartes déjà posées au centre, dans l'ordre où elles ont été
+  /// jouées. Rien n'est ramassé : une nouvelle carte atterrit au-dessus de la
+  /// précédente et reste là jusqu'à la donne suivante.
+  List<PlayedCard> _floor = const [];
 
-  /// Cartes du pli qui vient de se terminer, ramassées vers le gagnant.
-  List<PlayedCard> _gathered = const [];
-  int? _gatheredTrick;
-  Timer? _settleTimer;
+  @override
+  void initState() {
+    super.initState();
+    _floor = _seed(widget.view);
+  }
 
   @override
   void didUpdateWidget(covariant _TrickArea oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final previous = oldWidget.view;
     final view = widget.view;
-    final completed = previous.currentTrick.isNotEmpty &&
-        view.currentTrick.isEmpty &&
-        view.tricksPlayed > previous.tricksPlayed;
-    if (completed && view.lastTrick != null) {
-      // Le moteur résout le pli dès la 4e carte : on laisse d'abord la carte
-      // arriver (lancer), puis on ramasse les 4 cartes vers le gagnant.
-      _gathered = view.lastTrick!.plays;
-      _gatheredTrick = view.tricksPlayed;
-      _gather.stop();
-      _gather.value = 0;
-      _settleTimer?.cancel();
-      _settleTimer = Timer(_throwDuration, () {
-        if (!mounted || _gatheredTrick != widget.view.tricksPlayed) return;
-        _gather.forward(from: 0).whenCompleteOrCancel(() {
-          if (!mounted || _gatheredTrick != widget.view.tricksPlayed) return;
-          setState(() => _gathered = const []);
-        });
-      });
-    } else if (view.currentTrick.length > previous.currentTrick.length) {
-      // Un nouveau pli démarre : on abandonne le ramassage précédent.
-      _settleTimer?.cancel();
-      _gather.stop();
-      _gathered = const [];
-      _gatheredTrick = null;
-    } else if (view.tricksPlayed < previous.tricksPlayed) {
-      // Nouvelle donne : on repart d'une table vide.
-      _settleTimer?.cancel();
-      _gathered = const [];
-      _gatheredTrick = null;
-      _gather.stop();
+    final previous = oldWidget.view;
+    if (view.dealsStarted != previous.dealsStarted ||
+        view.tricksPlayed < previous.tricksPlayed ||
+        view.phase != 'playing') {
+      _floor = _seed(view);
+      return;
     }
+    final known = _floor.map((play) => play.card.id).toSet();
+    final incoming = <PlayedCard>[
+      ...?view.lastTrick?.plays,
+      ...view.currentTrick,
+    ].where((play) => known.add(play.card.id)).toList();
+    if (incoming.isNotEmpty) _floor = [..._floor, ...incoming];
   }
 
-  @override
-  void dispose() {
-    _settleTimer?.cancel();
-    _gather.dispose();
-    super.dispose();
+  List<PlayedCard> _seed(PlayerView view) {
+    final seen = <String>{};
+    return [
+      ...?view.lastTrick?.plays,
+      ...view.currentTrick,
+    ].where((play) => seen.add(play.card.id)).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final client = widget.client;
     final view = widget.view;
-    final l10n = L10n.of(context);
     final me = client.seat ?? view.seat;
     final trump = view.trump;
-    final gathering = _gathered.isNotEmpty;
-    final plays = gathering ? _gathered : view.currentTrick;
-    final master = trump == null || gathering
-        ? null
-        : trickMaster(view.currentTrick, trump);
-    final winnerSeat = view.lastTrick?.winnerSeat ?? me;
+    // Toutes les cartes restent sur le tapis. Seule la nouvelle est animée ;
+    // les précédentes gardent la même clé et ne bougent plus.
+    final plays = _floor;
+    final currentSource = view.currentTrick.isNotEmpty
+        ? view.currentTrick
+        : (view.lastTrick?.plays ?? const <PlayedCard>[]);
+    final master = trump == null ? null : trickMaster(currentSource, trump);
+    final masterCard = master?.card.id;
 
-    Widget placeholder(Alignment alignment) => Align(
+    // Pli légèrement incliné : chaque carte garde son coin lisible.
+    final tilts = <int, double>{
+      me: -0.05,
+      (me + 2) % 4: 0.05,
+      (me + 1) % 4: -0.09,
+      (me + 3) % 4: 0.09,
+    };
+
+    Widget placeholder(int seat, Alignment alignment) => Align(
+          key: ValueKey('slot-empty-$seat'),
           alignment: alignment,
           child: Container(
             width: 40,
@@ -979,185 +1000,82 @@ class _TrickAreaState extends State<_TrickArea>
           ),
         );
 
-    Widget slot(PlayedCard? play, Alignment alignment, double gatherValue) {
-      if (play == null) return placeholder(alignment);
-      final card = PlayingCard(
-        card: play.card,
-        width: 40,
-        highlighted: master?.seat == play.seat,
-        isTrump: trump == play.card.suit,
-      );
-      if (gatherValue > 0) {
-        // Le pli est ramassé immédiatement vers le siège du gagnant.
-        final eased = Curves.easeInCubic.transform(gatherValue);
-        final target = _entryOffset(winnerSeat, me);
-        return Align(
-          alignment: alignment,
-          child: Opacity(
-            opacity: (1 - eased).clamp(0.0, 1.0),
-            child: Transform.translate(
-              offset: Offset(target.dx, target.dy) * (0.55 * eased),
-              child: Transform.scale(scale: 1 - 0.45 * eased, child: card),
-            ),
-          ),
-        );
-      }
+    Widget slot(PlayedCard play, Alignment alignment) {
+      // La clé porte sur le créneau lui-même, pas seulement sur l'animation :
+      // sans elle, Flutter réutilise un créneau vide pour la nouvelle carte et
+      // déplace toutes les cartes déjà posées d'un index, ce qui relance leur
+      // contrôleur de lancer.
       return Align(
+        key: ValueKey('slot-played-${play.seat}-${play.card.id}'),
         alignment: alignment,
         child: _PlayedCardAnimation(
-          // La clé ne dépend pas du numéro de pli : les 3 premières cartes ne
-          // rejouent pas leur lancer quand la 4e arrive et clôt le pli.
-          key: ValueKey('${play.seat}-${play.card.id}'),
+          key: ValueKey('flight-${play.seat}-${play.card.id}'),
           from: _entryOffset(play.seat, me),
-          child: card,
+          child: Transform.rotate(
+            angle: tilts[play.seat] ?? 0,
+            child: PlayingCard(
+              card: play.card,
+              width: 40,
+              highlighted: masterCard == play.card.id,
+              isTrump: trump == play.card.suit,
+            ),
+          ),
         ),
       );
     }
 
     final positions = <int, Alignment>{
-      me: Alignment.bottomCenter,
-      (me + 2) % 4: Alignment.topCenter,
-      (me + 1) % 4: Alignment.centerLeft,
-      (me + 3) % 4: Alignment.centerRight,
+      me: const Alignment(0, 0.42),
+      (me + 2) % 4: const Alignment(0, -0.42),
+      (me + 1) % 4: const Alignment(-0.34, 0),
+      (me + 3) % 4: const Alignment(0.34, 0),
     };
+    final playedSeats = plays.map((play) => play.seat).toSet();
 
-    PlayedCard? playOf(int seat) {
-      for (final play in plays) {
-        if (play.seat == seat) return play;
-      }
-      return null;
-    }
-
-    final contractText = view.contract != null
-        ? l10n.contractLabel(view.contract)
-        : _latestBid(l10n);
-
+    // Le centre ne contient que le pli. L'ordre de la Stack suit l'ordre de
+    // jeu : première carte en bas, dernière carte posée au-dessus.
     return FittedBox(
       fit: BoxFit.scaleDown,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (trump != null) ...[
-                SuitBadge(suit: trump, size: 11),
-                const SizedBox(width: 6),
-              ],
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 140),
-                child: Text(
-                  contractText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppTheme.goldSoft,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+      child: SizedBox(
+        key: const Key('trick-center'),
+        width: 168,
+        height: 128,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final entry in positions.entries)
+              if (!playedSeats.contains(entry.key))
+                placeholder(entry.key, entry.value),
+            for (final play in plays)
+              slot(play, positions[play.seat] ?? Alignment.center),
+            if (plays.isEmpty)
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.black.withValues(alpha: 0.14),
+                    border: Border.all(
+                      color: AppTheme.gold.withValues(alpha: 0.18),
+                    ),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'B',
+                      style: TextStyle(
+                        color: AppTheme.gold,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
-          if (view.contract != null)
-            Text(
-              l10n.t('contractBy', {
-                'name': l10n.seatName(
-                  client.room,
-                  view.contract!.bidderSeat,
-                  me: me,
-                ),
-              }),
-              style: const TextStyle(color: AppTheme.muted, fontSize: 8.5),
-            ),
-          const SizedBox(height: 5),
-          SizedBox(
-            width: 168,
-            height: 128,
-            child: AnimatedBuilder(
-              animation: _gather,
-              builder: (context, _) {
-                final gatherValue = gathering ? _gather.value : 0.0;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    for (final entry in positions.entries)
-                      slot(playOf(entry.key), entry.value, gatherValue),
-                    if (plays.isEmpty)
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.black.withValues(alpha: 0.14),
-                            border: Border.all(
-                              color: AppTheme.gold.withValues(alpha: 0.18),
-                            ),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'B',
-                              style: TextStyle(
-                                color: AppTheme.gold,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 2),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TeamDot(team: 0, size: 5),
-              const SizedBox(width: 4),
-              Text(
-                '${view.cardPointsByTeam[0] ?? 0}',
-                style: TextStyle(
-                  color: teamColor(0),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(width: 9),
-              TeamDot(team: 1, size: 5),
-              const SizedBox(width: 4),
-              Text(
-                '${view.cardPointsByTeam[1] ?? 0}',
-                style: TextStyle(
-                  color: teamColor(1),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
-  }
-
-  String _latestBid(L10n l10n) {
-    for (final record in widget.view.auctionHistory.reversed) {
-      final action = record.action;
-      if (action is NumberBid) {
-        return '${action.amount} ${action.trump.symbol}';
-      }
-      if (action is CapotBid) {
-        return '${l10n.t('capot')} ${action.trump.symbol}';
-      }
-      if (action is CounterBid) return '×2';
-      if (action is SurcounterBid) return '×4';
-    }
-    return l10n.t('bidding');
   }
 }
 
@@ -1299,13 +1217,22 @@ class _LastTrickPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final trick = view.lastTrick;
-    if (trick == null) return const SizedBox.shrink();
+    final contract = view.contract;
+    if (trick == null && contract == null) return const SizedBox.shrink();
     final l10n = L10n.of(context);
-    final winner = trick.winnerSeat == (client.seat ?? view.seat)
-        ? l10n.t('you')
-        : l10n.seatName(client.room, trick.winnerSeat, me: client.seat);
+    final me = client.seat ?? view.seat;
+    final winner = trick == null
+        ? ''
+        : trick.winnerSeat == me
+            ? l10n.t('you')
+            : l10n.seatName(client.room, trick.winnerSeat, me: client.seat);
+    final bidder = contract == null
+        ? ''
+        : l10n.seatName(client.room, contract.bidderSeat, me: client.seat);
+
     return Container(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+      key: const Key('corner-panel'),
+      padding: const EdgeInsets.all(5),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.24),
         borderRadius: BorderRadius.circular(9),
@@ -1315,44 +1242,95 @@ class _LastTrickPanel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Text(
-            l10n.t('lastTrick'),
-            style: const TextStyle(
-              color: AppTheme.muted,
-              fontSize: 7.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (var i = 0; i < trick.plays.length; i++) ...[
-                if (i > 0) const SizedBox(width: 1),
-                PlayingCard(
-                  card: trick.plays[i].card,
-                  width: 23,
-                  isTrump: view.trump == trick.plays[i].card.suit,
-                  highlighted: trick.plays[i].seat == trick.winnerSeat,
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 3),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 88),
-            child: Text(
-              '${trick.points} · $winner',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: teamColor(trick.winningTeam),
+          if (trick != null) ...[
+            Text(
+              l10n.t('lastTrick'),
+              style: const TextStyle(
+                color: AppTheme.muted,
                 fontSize: 7.5,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
+            const SizedBox(height: 3),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < trick.plays.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 1),
+                  PlayingCard(
+                    card: trick.plays[i].card,
+                    width: 23,
+                    isTrump: view.trump == trick.plays[i].card.suit,
+                    highlighted: trick.plays[i].seat == trick.winnerSeat,
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 3),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 104),
+              child: Text(
+                '${trick.points} · $winner',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: teamColor(trick.winningTeam),
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+          if (contract != null) ...[
+            if (trick != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: AppTheme.gold.withValues(alpha: 0.2),
+                ),
+              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (view.trump != null) ...[
+                  SuitBadge(suit: view.trump!, size: 10),
+                  const SizedBox(width: 5),
+                ],
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 104),
+                  child: Text(
+                    l10n.contractLabel(contract),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: AppTheme.goldSoft,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 116),
+              child: Text(
+                l10n.t('contractBy', {'name': bidder}),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  color: AppTheme.muted,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1360,10 +1338,15 @@ class _LastTrickPanel extends StatelessWidget {
 }
 
 class _SelfBar extends StatelessWidget {
-  const _SelfBar({required this.client, required this.view});
+  const _SelfBar({
+    required this.client,
+    required this.view,
+    this.bubble,
+  });
 
   final GameClient client;
   final PlayerView view;
+  final Widget? bubble;
 
   @override
   Widget build(BuildContext context) {
@@ -1414,12 +1397,26 @@ class _SelfBar extends StatelessWidget {
               final showClock = view.isMyTurn &&
                   deadline != null &&
                   (duration?.inMilliseconds ?? 0) >= 5000;
-              if (!showClock) return avatar;
+              final decorated = Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (shouldShowLeadCoin(view, view.seat))
+                    Positioned(
+                      left: -7,
+                      top: 7,
+                      child: LeadCoin(label: l10n.t('leadCoinLabel')),
+                    ),
+                  if (bubble != null)
+                    Positioned(bottom: 34, left: -6, child: bubble!),
+                  avatar,
+                ],
+              );
+              if (!showClock) return decorated;
               return TurnRing(
                 deadline: deadline,
                 duration: duration!,
                 size: 28,
-                child: avatar,
+                child: decorated,
               );
             },
           ),
@@ -1477,10 +1474,6 @@ class _SelfBar extends StatelessWidget {
               color: view.beloteDeclined ? AppTheme.muted : AppTheme.gold,
               icon: Icons.music_note,
             ),
-          if (view.contract != null) ...[
-            const SizedBox(width: 6),
-            StatusPill(label: l10n.contractLabel(view.contract), dense: true),
-          ],
         ],
       ),
     );

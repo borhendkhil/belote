@@ -171,18 +171,29 @@ int totalDeckPoints(Suit trump) =>
 
 /// Trie une main pour l'affichage : couleurs groupées, atout en dernier.
 ///
+/// L'ordre des groupes est noir / rouge / noir / rouge : ♠ ♥ ♣ ♦. Il ne suit
+/// donc pas [Suit.values], qui sert à la construction du paquet.
+///
 /// Chaque couleur suit ses propres points, pas l'ordre naturel des rangs :
 /// - atout : V, 9, A, 10, R, D, 8, 7 ;
 /// - hors atout : A, 10, R, D, V, 9, 8, 7.
 ///
 /// La force départage les cartes qui valent 0 point.
+const _handSuitOrder = <Suit, int>{
+  Suit.spades: 0,
+  Suit.hearts: 1,
+  Suit.clubs: 2,
+  Suit.diamonds: 3,
+};
+
 List<Card> sortHand(List<Card> hand, {Suit? trump}) {
   final sorted = [...hand];
   sorted.sort((a, b) {
     if (trump != null && (a.suit == trump) != (b.suit == trump)) {
       return a.suit == trump ? 1 : -1;
     }
-    final suitCompare = a.suit.index.compareTo(b.suit.index);
+    final suitCompare =
+        _handSuitOrder[a.suit]!.compareTo(_handSuitOrder[b.suit]!);
     if (suitCompare != 0) return suitCompare;
 
     final atTrump = trump != null && a.suit == trump;

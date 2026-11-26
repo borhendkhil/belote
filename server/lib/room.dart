@@ -5,20 +5,19 @@ import 'package:bellote_engine/bellote_engine.dart';
 
 import 'hub.dart';
 
-/// Carte à jouer automatiquement quand [seat] n'a aucun choix réel.
+/// Seule carte légale de [seat], jouée par règle à l'échéance du tour.
 ///
-/// Renvoie `null` dès qu'une décision reste à prendre : plusieurs cartes
-/// légales, ou une seule carte légale qui permettrait encore de déclarer la
-/// belote. Dans ce dernier cas, le joueur garde son tour et son choix.
-Card? forcedPlayCard(Deal deal, int seat) {
+/// Tant que le chronomètre court, le joueur garde la main : rien n'est joué
+/// avant la fin du délai, même s'il n'a qu'une carte. À l'échéance, le serveur
+/// joue cette carte avec `declareBelote: false` : la belote n'est jamais
+/// annoncée à la place du joueur.
+Card? cardByRule(Deal deal, int seat) {
   if (deal.phase != DealPhase.playing || deal.currentTurnSeat != seat) {
     return null;
   }
   final legal = deal.legalCardsFor(seat);
   if (legal.length != 1) return null;
-  final card = legal.first;
-  if (deal.belote?.canDeclareFirst(seat, card) ?? false) return null;
-  return card;
+  return legal.first;
 }
 
 class SeatSlot {
@@ -588,15 +587,10 @@ class Room {
     if (seat == null) return;
     final slot = seats[seat];
     final auto = slot == null || slot.isBot || slot.autoPlay || !slot.connected;
-    // Un humain qui n'a qu'une carte légale n'a rien à décider : on joue cette
-    // carte très vite, sans le faire attendre ni lancer le chrono de 45 s.
-    final deal = game.deal;
-    final forced = auto || deal == null ? null : forcedPlayCard(deal, seat);
-    final delay = forced != null
-        ? const Duration(milliseconds: 260)
-        : auto
-            ? const Duration(milliseconds: 900)
-            : const Duration(seconds: 45);
+    // Même une unique carte légale attend la fin du tour humain : aucun raccourci
+    // côté serveur, aucun auto-play côté client. C'est l'échéance qui joue.
+    final delay =
+        auto ? const Duration(milliseconds: 900) : const Duration(seconds: 45);
     _turnDeadline = DateTime.now().add(delay);
     _turnDuration = delay;
     final serial = _serial;
@@ -605,23 +599,6 @@ class Room {
       final current = this.game;
       if (current == null) return;
       if (_actingSeat(current) != seat) return;
-
-      if (forced != null) {
-        final currentDeal = current.deal;
-        final stillForced =
-            currentDeal != null ? forcedPlayCard(currentDeal, seat) : null;
-        if (stillForced == forced) {
-          try {
-            current.playCard(seat, forced, declareBelote: false);
-          } catch (error, stack) {
-            // Filet de sécurité : ne jamais bloquer la partie.
-            // ignore: avoid_print
-            print('Carte forcée erreur: $error\n$stack');
-          }
-        }
-        _refresh();
-        return;
-      }
 
       final isBotTurn = seats[seat] == null ||
           seats[seat]!.isBot ||
@@ -634,7 +611,23 @@ class Room {
           'seat': seat,
         });
       }
-      _performBotAction(seat);
+
+      final currentDeal = current.deal;
+      final ruleCard = !isBotTurn && currentDeal != null
+          ? cardByRule(currentDeal, seat)
+          : null;
+      if (ruleCard != null) {
+        // Par règle, sans jamais annoncer la belote à la place du joueur.
+        try {
+          current.playCard(seat, ruleCard, declareBelote: false);
+        } catch (error, stack) {
+          // Filet de sécurité : ne jamais bloquer la partie.
+          // ignore: avoid_print
+          print('Carte par règle erreur: $error\n$stack');
+        }
+      } else {
+        _performBotAction(seat, allowBelote: isBotTurn);
+      }
       _refresh();
     });
   }
@@ -652,7 +645,7 @@ class Room {
     }
   }
 
-  void _performBotAction(int seat) {
+  void _performBotAction(int seat, {bool allowBelote = true}) {
     final game = this.game;
     if (game == null) return;
     try {
@@ -667,7 +660,7 @@ class Room {
           game.playCard(
             seat,
             decision.card,
-            declareBelote: decision.declareBelote,
+            declareBelote: allowBelote && decision.declareBelote,
           );
         }
         return;

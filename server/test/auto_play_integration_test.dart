@@ -100,12 +100,21 @@ void main() {
       final before = handCounts['$seat'] as int;
 
       if (legal.length == 1) {
-        // Aucun message n'est envoyé : le serveur doit jouer cette carte seul.
+        // Aucun message n'est envoyé : le serveur n'accélère pas le tour, même
+        // avec une seule carte légale. Il attend l'échéance de 45 s, puis joue
+        // cette carte par règle.
+        final deadline = message['turnDeadline'] as int?;
+        expect(deadline, isNotNull);
+        final remaining = DateTime.fromMillisecondsSinceEpoch(deadline!)
+            .difference(DateTime.now())
+            .inSeconds;
+        expect(remaining, greaterThan(35));
+
         var advanced = false;
         for (var wait = 0; wait < 25; wait++) {
           final nextState = await next(
             types: {'state'},
-            timeout: const Duration(seconds: 5),
+            timeout: const Duration(seconds: 60),
           );
           final nextView = Map<String, dynamic>.from(
             nextState['view'] as Map,
@@ -118,7 +127,8 @@ void main() {
             break;
           }
         }
-        expect(advanced, isTrue, reason: 'La carte forcée n’a pas été jouée');
+        expect(advanced, isTrue,
+            reason: 'La carte par règle n’a pas été jouée');
         return;
       }
 

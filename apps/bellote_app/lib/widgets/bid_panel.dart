@@ -17,13 +17,23 @@ class BidPanel extends StatefulWidget {
 }
 
 class _BidPanelState extends State<BidPanel> {
-  Suit _suit = Suit.spades;
+  // Couleurs affichées dans l'ordre noir / rouge / noir / rouge attendu pour
+  // les annonces. On n'utilise pas Suit.values (pique / cœur / carreau / trèfle).
+  static const List<Suit> _suits = [
+    Suit.spades,
+    Suit.diamonds,
+    Suit.clubs,
+    Suit.hearts,
+  ];
+
+  /// Choix local du joueur humain : aucune couleur n'est présélectionnée et
+  /// l'atout de la donne courante ne doit pas l'imposer.
+  Suit? _suit;
   int? _amount;
 
   @override
   void initState() {
     super.initState();
-    _suit = widget.view.trump ?? Suit.spades;
     _amount = widget.view.canBidNumbers ? widget.view.minimumBid : null;
   }
 
@@ -31,11 +41,19 @@ class _BidPanelState extends State<BidPanel> {
   void didUpdateWidget(covariant BidPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     final view = widget.view;
+    final oldView = oldWidget.view;
+
+    final newTurn = view.isMyTurn && !oldView.isMyTurn;
+    final newDeal = view.dealsStarted != oldView.dealsStarted;
+    final biddingRestarted = view.isBidding &&
+        (!oldView.isBidding ||
+            (view.auctionHistory.isEmpty && oldView.auctionHistory.isNotEmpty));
+    if (newTurn || newDeal || biddingRestarted) {
+      _suit = null;
+    }
+
     if (_amount == null || _amount! < view.minimumBid) {
       _amount = view.canBidNumbers ? view.minimumBid : null;
-    }
-    if (view.trump != null && view.trump != oldWidget.view.trump) {
-      _suit = view.trump!;
     }
   }
 
@@ -64,8 +82,8 @@ class _BidPanelState extends State<BidPanel> {
     return l10n.t('noBidsYet');
   }
 
-  void _placeBid(int amount) {
-    widget.client.bid(amount, _suit);
+  void _placeBid(int amount, Suit suit) {
+    widget.client.bid(amount, suit);
   }
 
   @override
@@ -73,9 +91,13 @@ class _BidPanelState extends State<BidPanel> {
     final l10n = L10n.of(context);
     final view = widget.view;
     final amounts = _amounts;
+    final suit = _suit;
     final selectedAmount = amounts.contains(_amount)
         ? _amount
         : (amounts.isEmpty ? null : amounts.first);
+    final showSansBeloteHint = amounts.any(
+      (amount) => amount == 170 || amount == 180,
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -176,19 +198,20 @@ class _BidPanelState extends State<BidPanel> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  for (final suit in Suit.values) ...[
+                  for (final candidate in _suits) ...[
                     SuitBadge(
-                      suit: suit,
+                      suit: candidate,
                       size: 15,
-                      selected: suit == _suit,
-                      onTap: () => setState(() => _suit = suit),
+                      selected: candidate == suit,
+                      onTap: () => setState(() => _suit = candidate),
                     ),
                     const SizedBox(width: 6),
                   ],
                   const Spacer(),
                   if (view.canCapot)
                     OutlinedButton.icon(
-                      onPressed: () => widget.client.capot(_suit),
+                      onPressed:
+                          suit == null ? null : () => widget.client.capot(suit),
                       icon: const Icon(Icons.local_fire_department, size: 15),
                       label: Text(l10n.t('capot')),
                       style: OutlinedButton.styleFrom(
@@ -202,6 +225,18 @@ class _BidPanelState extends State<BidPanel> {
                     ),
                 ],
               ),
+              if (showSansBeloteHint)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    l10n.t('bidWithoutBeloteHint'),
+                    style: const TextStyle(
+                      color: AppTheme.goldSoft,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               if (amounts.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SizedBox(
@@ -250,14 +285,16 @@ class _BidPanelState extends State<BidPanel> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: selectedAmount == null
+                  onPressed: suit == null || selectedAmount == null
                       ? null
-                      : () => _placeBid(selectedAmount),
+                      : () => _placeBid(selectedAmount, suit),
                   icon: const Icon(Icons.gavel, size: 18),
                   label: Text(
                     selectedAmount == null
                         ? l10n.t('capotOnly')
-                        : '${l10n.t('bid')} $selectedAmount  ${_suit.symbol}',
+                        : suit == null
+                            ? '${l10n.t('bid')} $selectedAmount'
+                            : '${l10n.t('bid')} $selectedAmount ${suit.symbol}',
                   ),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(0, 42),

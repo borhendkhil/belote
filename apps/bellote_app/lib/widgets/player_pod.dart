@@ -13,6 +13,8 @@ class PlayerPod extends StatelessWidget {
     required this.team,
     required this.isTurn,
     this.isDealer = false,
+    this.isLeading = false,
+    this.bubble,
     this.isBot = false,
     this.autoPlay = false,
     this.connected = true,
@@ -32,6 +34,14 @@ class PlayerPod extends StatelessWidget {
   final int team;
   final bool isTurn;
   final bool isDealer;
+
+  /// Vrai quand ce siège s'apprête à ouvrir le pli : une pièce dorée est
+  /// affichée à côté de l'avatar, distincte du marqueur « D » du donneur.
+  final bool isLeading;
+
+  /// Bulle temporaire (passe / belote / rebelote) affichée près du siège.
+  final Widget? bubble;
+
   final bool isBot;
   final bool autoPlay;
   final bool connected;
@@ -52,6 +62,12 @@ class PlayerPod extends StatelessWidget {
     final l10n = L10n.of(context);
     final tint = teamColor(team);
     final avatarSize = compact ? 34.0 : 42.0;
+    // Les points et les plis sont toujours affichés sous le nom, y compris
+    // dans les pod compacts de gauche et de droite.
+    final stats = [
+      if (cardPoints != null) l10n.t('pointsWon', {'points': cardPoints}),
+      if (tricksWon != null) l10n.t('tricksWon', {'count': tricksWon}),
+    ].join('  ·  ');
     // L'anneau n'a de sens que sur un tour humain (les bots jouent en 0,9 s).
     final showClock = isTurn &&
         turnDeadline != null &&
@@ -156,6 +172,12 @@ class PlayerPod extends StatelessWidget {
                         );
                       },
                     ),
+                    if (isLeading)
+                      Positioned(
+                        left: -9,
+                        top: avatarSize / 2 - 7,
+                        child: LeadCoin(label: l10n.t('leadCoinLabel')),
+                      ),
                     if (isDealer)
                       Positioned(
                         right: -3,
@@ -182,6 +204,12 @@ class PlayerPod extends StatelessWidget {
                             ),
                           ),
                         ),
+                      ),
+                    if (bubble != null)
+                      Positioned(
+                        bottom: avatarSize + 4,
+                        left: -6,
+                        child: bubble!,
                       ),
                     if (!connected)
                       Positioned(
@@ -240,16 +268,6 @@ class PlayerPod extends StatelessWidget {
                               fontSize: 9,
                             ),
                           ),
-                          if (cardPoints != null) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              l10n.t('pointsWon', {'points': cardPoints}),
-                              style: const TextStyle(
-                                color: AppTheme.muted,
-                                fontSize: 9,
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ],
@@ -282,14 +300,66 @@ class PlayerPod extends StatelessWidget {
                 ),
               ),
             ],
-            if (tricksWon != null && !compact) ...[
-              const SizedBox(height: 3),
-              Text(
-                l10n.t('tricksWon', {'count': tricksWon}),
-                style: const TextStyle(color: AppTheme.muted, fontSize: 9),
+            if (stats.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              SizedBox(
+                width: compact ? 72 : null,
+                child: Text(
+                  stats,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: compact ? TextAlign.center : TextAlign.start,
+                  style: TextStyle(
+                    color: AppTheme.muted,
+                    fontSize: compact ? 8 : 9,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Pièce dorée posée à côté du siège qui s'apprête à ouvrir le pli.
+///
+/// Elle remplace l'ancienne bulle « ouverture » : elle n'apparaît que tant
+/// qu'aucune carte n'a été jouée dans le pli courant.
+class LeadCoin extends StatelessWidget {
+  const LeadCoin({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      child: Container(
+        width: 15,
+        height: 15,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFFF6D77A), Color(0xFFC99635)],
+          ),
+          border: Border.all(color: AppTheme.feltDeep, width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.gold.withValues(alpha: 0.45),
+              blurRadius: 8,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: const Center(
+          child: Icon(
+            Icons.bolt,
+            size: 8,
+            color: AppTheme.feltDeep,
+          ),
         ),
       ),
     );

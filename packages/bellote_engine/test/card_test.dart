@@ -94,6 +94,19 @@ void main() {
       );
     });
 
+    test('les groupes de couleurs alternent ♠ ♥ ♣ ♦', () {
+      final hand = [
+        Card.parse('7D'),
+        Card.parse('7C'),
+        Card.parse('7H'),
+        Card.parse('7S'),
+      ];
+      expect(
+        sortHand(hand).map((card) => card.id),
+        ['7S', '7H', '7C', '7D'],
+      );
+    });
+
     test('parsing et sérialisation', () {
       const card = Card(Rank.ten, Suit.diamonds);
       expect(card.id, '10D');

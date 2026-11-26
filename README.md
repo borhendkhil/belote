@@ -38,8 +38,15 @@ illégale et l'application n'affiche que les actions autorisées par la vue
   anti-horaire (`(siège + 1) % 4`).
 - Obligation de fournir la couleur, de monter à l'atout, de couper ou
   surcouper selon le cas, et de jouer atout lorsqu'un joueur est bloqué.
-- Dernière carte ou seule carte légale jouée automatiquement (sauf si elle
-  permet encore de déclarer la belote : le choix reste au joueur).
+
+> On the final trick (dernier pli), play is forced.
+>
+> Even if only one card playable in hand, do not play it automatically or when the turn timer expires, the card must still be played automatically/by rule.
+
+Traduction : le client ne joue jamais seul, même avec une seule carte légale,
+et le serveur n'abrège pas le délai. À l'échéance des 45 secondes, le serveur
+joue la carte légale par règle avec `declareBelote: false` : la belote reste un
+choix du joueur et n'est jamais annoncée automatiquement.
 - Contrat réussi si les points arrondis de l'attaque atteignent le montant.
   Contrat chuté : 160 à la défense ; contré : 320 ; surcontré : 640 ;
   capot demandé : 500 ; capot non demandé : 250.

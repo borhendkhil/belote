@@ -5,6 +5,8 @@ import 'package:bellote_app/core/settings.dart';
 import 'package:bellote_app/core/theme.dart';
 import 'package:bellote_app/net/game_client.dart';
 import 'package:bellote_app/models/room_info.dart';
+import 'package:bellote_app/widgets/player_action_bubble.dart';
+import 'package:bellote_app/widgets/player_pod.dart';
 import 'package:bellote_app/screens/table_screen.dart';
 import 'package:bellote_app/widgets/playing_card.dart';
 import 'package:bellote_app/widgets/turn_ring.dart';
@@ -15,6 +17,17 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' hide Card;
 import 'package:shared_preferences/shared_preferences.dart';
+
+class PlayRecordingClient extends GameClient {
+  PlayRecordingClient({required super.settings});
+
+  final List<Card> played = [];
+
+  @override
+  Future<void> play(Card card, {bool belote = false}) async {
+    played.add(card);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -113,11 +126,11 @@ void main() {
     expect(tops.toSet().length, 1);
     expect(lefts, orderedEquals([...lefts]..sort()));
 
-    // 8 trump cards in hand + 4 in the last trick + none in the current trick.
+    // 8 cartes d'atout en main + 4 au centre (dernier pli) + 4 dans le panneau.
     expect(
       find.byWidgetPredicate(
           (widget) => widget is PlayingCard && widget.isTrump),
-      findsNWidgets(12),
+      findsNWidgets(16),
     );
   });
 
@@ -368,11 +381,14 @@ void main() {
     // Première image : la carte part de son siège.
     await tester.pump();
 
-    final card = find
-        .byWidgetPredicate(
-          (widget) => widget is PlayingCard && widget.width == 40,
-        )
-        .first;
+    // La carte qui vole est celle du pli courant, pas une carte déjà posée au
+    // centre depuis le pli précédent.
+    final card = find.byWidgetPredicate(
+      (widget) =>
+          widget is PlayingCard &&
+          widget.width == 40 &&
+          widget.card == const Card(Rank.ace, Suit.hearts),
+    );
     final start = tester.getCenter(card);
 
     // Rotation du lancer : demi-tour complet (π rad) au départ.
@@ -399,11 +415,16 @@ void main() {
     // En vol, puis immobile à sa place définitive.
     expect((mid - end).distance, greaterThan(3));
     expect((start - end).distance, greaterThan((mid - end).distance));
-    // Le trajet est rectiligne : l'axe horizontal ne bouge pas.
-    expect((mid.dx - end.dx).abs(), lessThan(1));
-    expect((start.dx - end.dx).abs(), lessThan(1));
-    // Elle finit bien droite sur le tapis.
-    expect(rotationOf(card)?.abs() ?? 0, lessThan(0.05));
+    // Le trajet est rectiligne : le point intermédiaire reste sur la droite
+    // qui relie le siège au centre, quelle que soit la direction du lancer.
+    final trajectory = end - start;
+    final partial = mid - start;
+    final cross =
+        (partial.dx * trajectory.dy - partial.dy * trajectory.dx).abs();
+    expect(cross / trajectory.distance, lessThan(1));
+    // Le lancer finit par un demi-tour ; seule subsiste l'inclinaison voulue
+    // du pli au centre de la table.
+    expect(rotationOf(card)?.abs() ?? 0, closeTo(0.09, 0.02));
   });
 
   testWidgets(
@@ -441,7 +462,10 @@ void main() {
     expect((start - end).distance, greaterThan((mid - end).distance));
   });
 
-  testWidgets('le pli terminé est ramassé immédiatement', (tester) async {
+  testWidgets(
+      'les cartes jouées restent au centre et la nouvelle arrive dessus', (
+    tester,
+  ) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = const Size(390 * 3, 844 * 3);
     addTearDown(tester.view.reset);
@@ -449,21 +473,19 @@ void main() {
     Finder trickCards() => find.byWidgetPredicate(
           (widget) => widget is PlayingCard && widget.width == 40,
         );
-    // La 4e carte du pli (9♠, jouée par le siège 3) doit arriver en vol.
-    Finder fourthCard() => find.byWidgetPredicate(
+    Finder cardFinder(Card card) => find.byWidgetPredicate(
           (widget) =>
               widget is PlayingCard &&
               widget.width == 40 &&
-              widget.card == const Card(Rank.nine, Suit.spades),
+              widget.card == card,
         );
+    List<Card> cardsOnFloor() => tester
+        .widgetList<PlayingCard>(trickCards())
+        .map((widget) => widget.card!)
+        .toList();
 
     final client = await makeClient();
-    await tester.pumpWidget(appFor(client));
-    await tester.pumpAndSettle();
-    expect(trickCards(), findsNWidgets(2));
-
-    final finished = await makeClient();
-    finished.view = _playingView(
+    client.view = _playingView(
       currentTrick: const [],
       tricksPlayed: 4,
       lastTrick: const TrickRecord(
@@ -479,23 +501,60 @@ void main() {
         winningTeam: 0,
       ),
     );
-    await tester.pumpWidget(appFor(finished));
-    await tester.pump();
-    // Les 4 cartes sont encore là, en train d'être ramassées.
-    expect(trickCards(), findsNWidgets(4));
-
-    // La 4e carte traverse la table avant que le pli ne soit ramassé.
-    final start = tester.getCenter(fourthCard());
-    await tester.pump(const Duration(milliseconds: 200));
-    final mid = tester.getCenter(fourthCard());
-    await tester.pump(const Duration(milliseconds: 220));
-    final landed = tester.getCenter(fourthCard());
-    expect((start - landed).distance, greaterThan(40));
-    expect((mid - landed).distance, greaterThan(3));
-
+    await tester.pumpWidget(appFor(client));
     await tester.pumpAndSettle();
-    // Elles disparaissent aussitôt : plus aucune carte au centre.
-    expect(trickCards(), findsNothing);
+    expect(cardsOnFloor(), [
+      const Card(Rank.ace, Suit.spades),
+      const Card(Rank.seven, Suit.spades),
+      const Card(Rank.eight, Suit.spades),
+      const Card(Rank.nine, Suit.spades),
+    ]);
+    final settledAce = tester.getCenter(
+      cardFinder(const Card(Rank.ace, Suit.spades)),
+    );
+    final settledNine = tester.getCenter(
+      cardFinder(const Card(Rank.nine, Suit.spades)),
+    );
+
+    // Nouveau pli : les 4 cartes restent, la 5e se pose au-dessus.
+    client.view = _playingView(
+      currentTrick: const [
+        PlayedCard(seat: 1, card: Card(Rank.seven, Suit.clubs)),
+      ],
+      tricksPlayed: 4,
+      lastTrick: client.view?.lastTrick,
+    );
+    client.notifyListeners();
+    await tester.pump();
+    // Aucune carte déjà posée n'a bougé : aucun lancer n'a été relancé.
+    expect(
+      (tester.getCenter(cardFinder(const Card(Rank.ace, Suit.spades))) -
+              settledAce)
+          .distance,
+      lessThan(0.5),
+    );
+    expect(
+      (tester.getCenter(cardFinder(const Card(Rank.nine, Suit.spades))) -
+              settledNine)
+          .distance,
+      lessThan(0.5),
+    );
+
+    final flyingStart = tester.getCenter(
+      cardFinder(const Card(Rank.seven, Suit.clubs)),
+    );
+    await tester.pumpAndSettle();
+    final flyingEnd = tester.getCenter(
+      cardFinder(const Card(Rank.seven, Suit.clubs)),
+    );
+    expect((flyingStart - flyingEnd).distance, greaterThan(3));
+    expect(cardsOnFloor(), [
+      const Card(Rank.ace, Suit.spades),
+      const Card(Rank.seven, Suit.spades),
+      const Card(Rank.eight, Suit.spades),
+      const Card(Rank.nine, Suit.spades),
+      const Card(Rank.seven, Suit.clubs),
+    ]);
     expect(tester.takeException(), isNull);
   });
 
@@ -635,61 +694,20 @@ void main() {
     expect(flatShadow.blurRadius, liftedShadow.blurRadius);
   });
 
-  test('la dernière carte est jouée seule, sauf choix de belote', () {
+  testWidgets('le client ne joue jamais seul la carte forcée', (tester) async {
     const card = Card(Rank.ace, Suit.spades);
-    const shortServerTimer = Duration(milliseconds: 260);
+    SharedPreferences.setMockInitialValues({'locale': 'fr'});
+    final settings = await SettingsController.load();
+    final client = PlayRecordingClient(settings: settings)
+      ..seat = 0
+      ..code = 'ABCDE'
+      ..view = _playingView(cards: const [card], legal: const [card]);
 
-    // Une seule carte légale : le client la joue si le serveur n'a pas déjà
-    // programmé son propre délai court.
-    expect(
-      shouldAutoPlayForcedCard(
-        _playingView(cards: const [card], legal: const [card]),
-        null,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldAutoPlayForcedCard(
-        _playingView(cards: const [card], legal: const [card]),
-        const Duration(seconds: 45),
-      ),
-      isTrue,
-    );
-
-    // Le serveur gère déjà la carte : aucun double envoi.
-    expect(
-      shouldAutoPlayForcedCard(
-        _playingView(cards: const [card], legal: const [card]),
-        shortServerTimer,
-      ),
-      isFalse,
-    );
-
-    // Plusieurs cartes légales ou tour adverse : aucun auto-play.
-    expect(
-      shouldAutoPlayForcedCard(
-        _playingView(
-          cards: const [card, Card(Rank.king, Suit.spades)],
-          legal: const [card, Card(Rank.king, Suit.spades)],
-        ),
-        null,
-      ),
-      isFalse,
-    );
-
-    // Une carte de belote non déclarée garde le choix du joueur.
-    expect(
-      shouldAutoPlayForcedCard(
-        _playingView(
-          cards: const [Card(Rank.king, Suit.spades)],
-          legal: const [Card(Rank.king, Suit.spades)],
-          holdsBelote: true,
-          canDeclareBelote: true,
-        ),
-        null,
-      ),
-      isFalse,
-    );
+    await tester.pumpWidget(appFor(client));
+    // Même après plusieurs secondes, l'application n'envoie rien : seule
+    // l'échéance du serveur (45 s) jouera cette carte, par règle.
+    await tester.pump(const Duration(seconds: 2));
+    expect(client.played, isEmpty);
   });
 
   testWidgets('les cartes glissent quand l’éventail se resserre', (
@@ -805,6 +823,152 @@ void main() {
     await tester.tap(handCard('QS'));
     await tester.pumpAndSettle();
     expect(find.text('Déclarer Belote'), findsNothing);
+  });
+
+  testWidgets('les cartes du pli se superposent dans l’ordre de jeu', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    client.view = _playingView(
+      lastTrick: null,
+      currentTrick: const [
+        PlayedCard(seat: 1, card: Card(Rank.seven, Suit.clubs)),
+        PlayedCard(seat: 2, card: Card(Rank.nine, Suit.diamonds)),
+        PlayedCard(seat: 3, card: Card(Rank.jack, Suit.hearts)),
+      ],
+    );
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final played = tester
+        .widgetList<PlayingCard>(
+          find.descendant(
+            of: find.byKey(const Key('trick-center')),
+            matching: find.byType(PlayingCard),
+          ),
+        )
+        .map((widget) => widget.card)
+        .toList();
+    expect(played, [
+      const Card(Rank.seven, Suit.clubs),
+      const Card(Rank.nine, Suit.diamonds),
+      const Card(Rank.jack, Suit.hearts),
+    ]);
+  });
+
+  testWidgets('le centre ne garde que le pli, les infos vont dans les coins', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    client.view = _playingView(lastTrick: null);
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final center = find.byKey(const Key('trick-center'));
+    final corner = find.byKey(const Key('corner-panel'));
+
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: center, matching: find.textContaining('pts')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: center, matching: find.text('100 ♠')),
+      findsNothing,
+    );
+
+    expect(
+      find.descendant(of: corner, matching: find.text('100 ♠')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: corner, matching: find.text('Contrat de Vous')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: corner, matching: find.textContaining('Pli ')),
+      findsNothing,
+    );
+
+    final pods = find.byType(PlayerPod);
+    for (var i = 0; i < pods.evaluate().length; i++) {
+      expect(
+        find.descendant(of: pods.at(i), matching: find.textContaining('pts')),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('la pièce d’ouverture n’apparaît qu’avant la première carte', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    client.view = _playingView(
+      currentTrick: const [],
+      lastTrick: null,
+      tricksPlayed: 0,
+    );
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LeadCoin), findsOneWidget);
+
+    client.view = _playingView(
+      currentTrick: const [
+        PlayedCard(seat: 0, card: Card(Rank.seven, Suit.clubs)),
+      ],
+      lastTrick: null,
+      tricksPlayed: 0,
+    );
+    client.notifyListeners();
+    await tester.pump();
+    expect(find.byType(LeadCoin), findsNothing);
+
+    // Aucune bulle d'ouverture : la pièce est le seul indicateur.
+    expect(find.text('Ouvre'), findsNothing);
+  });
+
+  testWidgets('passe, belote et rebelote sont des bulles distinctes', (
+    tester,
+  ) async {
+    GameEvent event(int seq, String type, int seat) => GameEvent(
+          seq: seq,
+          type: type,
+          data: {'seat': seat},
+        );
+
+    final client = await makeClient();
+    client.view = _playingView(events: const [], eventSeq: 1);
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlayerActionBubble), findsNothing);
+
+    client.view = _playingView(
+      events: [
+        event(2, 'pass', 1),
+        event(3, 'belote', 2),
+        event(4, 'rebelote', 3),
+        event(5, 'lead', 0),
+      ],
+      eventSeq: 5,
+    );
+    client.notifyListeners();
+    await tester.pump();
+
+    expect(find.byType(PlayerActionBubble), findsNWidgets(3));
+    expect(find.text('Passe !'), findsOneWidget);
+    expect(find.text('Belote !'), findsOneWidget);
+    expect(find.text('Rebelote !'), findsOneWidget);
+    expect(find.text('Ouvre'), findsNothing);
+
+    final colors = tester
+        .widgetList<PlayerActionBubble>(find.byType(PlayerActionBubble))
+        .map((widget) => widget.color)
+        .toSet();
+    expect(colors.length, 3);
   });
 
   testWidgets('table fits a small phone without overflow', (tester) async {
