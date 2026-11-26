@@ -11,7 +11,7 @@ class AppLogo extends StatelessWidget {
   /// Diamètre du disque en pixels logiques.
   final double height;
 
-  static const String asset = 'assets/images/belote-logo.jpeg';
+  static const String asset = 'assets/images/belote-logo .png';
 
   @override
   Widget build(BuildContext context) {
