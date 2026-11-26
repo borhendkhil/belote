@@ -44,6 +44,7 @@ class _TableScreenState extends State<TableScreen> {
   int? _lastEventSeq;
   int? _lastDeal;
   bool _animateDeal = false;
+  Timer? _dealAnimationTimer;
 
   /// Signature de la main déjà affichée. Quand elle change (carte jouée ou
   /// nouvelle donne), les cartes restantes se replacent immédiatement : seul
@@ -65,6 +66,8 @@ class _TableScreenState extends State<TableScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.client != widget.client) {
       oldWidget.client.removeListener(_onClientChanged);
+      _dealAnimationTimer?.cancel();
+      _animateDeal = false;
       _lastEventSeq = widget.client.view?.eventSeq;
       _lastDeal = widget.client.view?.dealsStarted;
       widget.client.addListener(_onClientChanged);
@@ -74,6 +77,7 @@ class _TableScreenState extends State<TableScreen> {
   @override
   void dispose() {
     widget.client.removeListener(_onClientChanged);
+    _dealAnimationTimer?.cancel();
     _announcementTimer?.cancel();
     for (final timer in _bubbleTimers.values) {
       timer.cancel();
@@ -89,7 +93,14 @@ class _TableScreenState extends State<TableScreen> {
     // On n'anime que les vraies nouvelles donnes : un écran qui s'ouvre sur
     // une partie déjà en cours affiche directement l'éventail en place.
     if (_lastDeal != null && view.dealsStarted != _lastDeal) {
+      _dealAnimationTimer?.cancel();
       _animateDeal = true;
+      // L'animation de distribution ne joue qu'une fois par donne. Sans ce
+      // retour à zéro, chaque carte jouée referait partir l'éventail du centre.
+      _dealAnimationTimer = Timer(_dealEntranceReset, () {
+        if (!mounted) return;
+        setState(() => _animateDeal = false);
+      });
     }
     _lastDeal = view.dealsStarted;
     final last = _lastEventSeq;
@@ -527,6 +538,10 @@ class _TableScreenState extends State<TableScreen> {
                   children: [
                     for (var i = 0; i < hand.length; i++)
                       AnimatedPositioned(
+                        // Identité stable : quand une carte est jouée, les
+                        // cartes restantes gardent leur état au lieu d'être
+                        // réattribuées à un index et de rejouer leur entrée.
+                        key: ValueKey('hand-${hand[i].id}'),
                         duration: movement,
                         curve: movementCurve,
                         left: i * step,
@@ -884,6 +899,10 @@ class _TableArea extends StatelessWidget {
 
 /// Durée du lancer d'une carte vers le tapis (assez lente pour être vue).
 const _throwDuration = Duration(milliseconds: 520);
+
+/// L'animation de distribution contient jusqu'à 220 ms de décalage et 380 ms
+/// de vol : on la coupe ensuite pour ne plus jamais la rejouer pendant le pli.
+const _dealEntranceReset = Duration(milliseconds: 700);
 
 class _TrickArea extends StatefulWidget {
   const _TrickArea({required this.client, required this.view});

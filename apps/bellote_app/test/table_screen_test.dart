@@ -822,6 +822,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('jouer une carte ne relance pas la distribution', (tester) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    addTearDown(tester.view.reset);
+
+    final client = await makeClient();
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    // Une nouvelle donne joue l'animation d'entrée une seule fois.
+    client.view = _playingView(dealsStarted: 2);
+    client.notifyListeners();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pumpAndSettle();
+
+    Finder card(String id) => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width > 50 &&
+              widget.card == Card.parse(id),
+        );
+
+    // Le roi est joué au milieu de l'éventail. L'as et la dame, qui changent
+    // d'index, doivent rester en place immédiatement : aucune carte ne doit
+    // repartir du centre du tapis comme lors de la distribution.
+    client.view = _playingView(
+      dealsStarted: 2,
+      cards: const [
+        Card(Rank.ace, Suit.spades),
+        Card(Rank.queen, Suit.spades),
+        Card(Rank.jack, Suit.spades),
+        Card(Rank.ten, Suit.spades),
+        Card(Rank.nine, Suit.spades),
+        Card(Rank.eight, Suit.spades),
+        Card(Rank.seven, Suit.spades),
+      ],
+    );
+    client.notifyListeners();
+    await tester.pump();
+    final immediateAce = tester.getCenter(card('AS'));
+    final immediateQueen = tester.getCenter(card('QS'));
+    await tester.pumpAndSettle();
+    final settledAce = tester.getCenter(card('AS'));
+    final settledQueen = tester.getCenter(card('QS'));
+
+    expect((immediateAce - settledAce).distance, lessThan(1));
+    expect((immediateQueen - settledQueen).distance, lessThan(1));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('une annonce de belote s\'affiche puis s\'efface',
       (tester) async {
     tester.view.devicePixelRatio = 2;
