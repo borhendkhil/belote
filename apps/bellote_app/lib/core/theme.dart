@@ -11,6 +11,22 @@ abstract final class AppTheme {
   static const red = Color(0xFFB3261E);
   static const muted = Color(0xFFA9BCD6);
 
+  /// Police manuscrite utilisée pour la feuille de score : le joueur a
+  /// l'impression d'avoir lui-même écrit les points sur le tapis.
+  static const handwritingFont = 'Caveat';
+
+  static TextStyle handwriting({
+    double size = 15,
+    Color color = cream,
+    FontWeight weight = FontWeight.w600,
+  }) =>
+      TextStyle(
+        fontFamily: handwritingFont,
+        color: color,
+        fontSize: size,
+        fontWeight: weight,
+      );
+
   static ThemeData dark() {
     final scheme = ColorScheme.fromSeed(
       seedColor: gold,

@@ -5,9 +5,12 @@ import 'package:bellote_app/core/settings.dart';
 import 'package:bellote_app/core/theme.dart';
 import 'package:bellote_app/net/game_client.dart';
 import 'package:bellote_app/models/room_info.dart';
+import 'package:bellote_app/widgets/app_logo.dart';
+import 'package:bellote_app/widgets/common.dart';
 import 'package:bellote_app/widgets/player_action_bubble.dart';
 import 'package:bellote_app/widgets/player_pod.dart';
 import 'package:bellote_app/widgets/score_sheet.dart';
+import 'package:bellote_app/widgets/score_table.dart';
 import 'package:bellote_app/screens/table_screen.dart';
 import 'package:bellote_app/widgets/playing_card.dart';
 import 'package:bellote_app/widgets/turn_ring.dart';
@@ -679,7 +682,8 @@ void main() {
     expect(client.played, isEmpty);
   });
 
-  testWidgets('les cartes glissent quand l’éventail se resserre', (
+  testWidgets(
+      'les cartes se replacent sans glisser quand l’éventail se resserre', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 3;
@@ -718,8 +722,10 @@ void main() {
     final end = tester.getCenter(lastCard());
 
     expect((start - end).distance, greaterThan(8));
-    expect((mid - start).distance, greaterThan(1));
-    expect((mid - end).distance, greaterThan(1));
+    expect((mid - start).distance, greaterThan(8));
+    // La carte jouée ne provoque pas de réagencement animé : la place finale
+    // est atteinte dès la première image.
+    expect((mid - end).distance, lessThan(0.5));
     expect(tester.takeException(), isNull);
   });
 
@@ -737,13 +743,26 @@ void main() {
     await tester.pumpWidget(appFor(client));
     await tester.pumpAndSettle();
 
-    final button = find.byTooltip('Feuille de score');
-    expect(button, findsOneWidget);
-    final center = tester.getCenter(button);
+    final table = find.byKey(const Key('score-table'));
+    expect(table, findsOneWidget);
+    expect(find.byType(ScoreTable), findsOneWidget);
+    expect(
+      find.descendant(of: table, matching: find.byType(Table)),
+      findsOneWidget,
+    );
+    expect(find.byType(AppLogo), findsOneWidget);
+
+    final total = find.descendant(of: table, matching: find.text('Total'));
+    expect(
+      tester.widget<Text>(total).style?.fontFamily,
+      AppTheme.handwritingFont,
+    );
+
+    final center = tester.getCenter(table);
     expect(center.dx, greaterThan(195));
     expect(center.dy, lessThan(80));
 
-    await tester.tap(button);
+    await tester.tap(table);
     await tester.pumpAndSettle();
 
     final sheet = find.byType(ScoreSheet);
@@ -1008,6 +1027,38 @@ void main() {
     }
   });
 
+  testWidgets('le contrat est affiché une seule fois, à côté du nom', (
+    tester,
+  ) async {
+    final client = await makeClient();
+    client.view = _playingView(
+      auctionHistory: const [
+        BidRecord(seat: 2, action: NumberBid(amount: 100, trump: Suit.spades)),
+      ],
+    );
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final corner = find.byKey(const Key('corner-panel'));
+    expect(
+      find.descendant(of: corner, matching: find.text('100 ♠')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: corner, matching: find.byType(SuitBadge)),
+        findsNothing);
+
+    final partner = find.byType(PlayerPod).first;
+    expect(
+      find.descendant(of: partner, matching: find.textContaining('Partenaire')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: partner, matching: find.textContaining('100 ♠')),
+      findsOneWidget,
+    );
+    expect(find.text('100 ♠'), findsNWidgets(2));
+  });
+
   testWidgets('la pièce d’ouverture n’apparaît qu’avant la première carte', (
     tester,
   ) async {
@@ -1148,6 +1199,7 @@ PlayerView _playingView({
   bool canDeclareBelote = false,
   bool beloteDeclared = false,
   bool holdsBelote = false,
+  List<BidRecord> auctionHistory = const [],
 }) {
   final hand = cards ??
       [
@@ -1201,7 +1253,7 @@ PlayerView _playingView({
     canSurcounter: false,
     minimumBid: 100,
     maxBid: 180,
-    auctionHistory: const [],
+    auctionHistory: auctionHistory,
     auctionClosed: auctionClosed,
     canDeclareBelote: canDeclareBelote,
     holdsBelote: holdsBelote,

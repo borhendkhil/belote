@@ -1,5 +1,6 @@
 import 'package:bellote_app/app.dart';
 import 'package:bellote_app/core/settings.dart';
+import 'package:bellote_app/widgets/app_logo.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -17,6 +18,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Belote Contrée'), findsOneWidget);
+    expect(find.byType(AppLogo), findsOneWidget);
     expect(
       find.widgetWithText(FilledButton, 'Créer une partie'),
       findsOneWidget,

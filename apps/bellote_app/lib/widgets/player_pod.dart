@@ -97,23 +97,6 @@ class PlayerPod extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (bidLabel != null && bidLabel!.isNotEmpty)
-              Container(
-                margin: const EdgeInsets.only(bottom: 5),
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTheme.gold,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  bidLabel!,
-                  style: const TextStyle(
-                    color: AppTheme.feltDeep,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -229,44 +212,62 @@ class PlayerPod extends StatelessWidget {
                 ),
                 if (!compact) const SizedBox(width: 9),
                 if (!compact)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            name,
-                            style: const TextStyle(
-                              color: AppTheme.cream,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 112),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppTheme.cream,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
-                          ),
-                          if (autoPlay) ...[
+                            if (bidLabel != null && bidLabel!.isNotEmpty) ...[
+                              const SizedBox(width: 5),
+                              Text(
+                                bidLabel!,
+                                style: const TextStyle(
+                                  color: AppTheme.gold,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                            if (autoPlay) ...[
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.smart_toy,
+                                size: 12,
+                                color: AppTheme.muted,
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            TeamDot(team: team, size: 6),
                             const SizedBox(width: 4),
-                            const Icon(
-                              Icons.smart_toy,
-                              size: 12,
-                              color: AppTheme.muted,
+                            Text(
+                              team == 0 ? l10n.t('teamUs') : l10n.t('teamThem'),
+                              style: const TextStyle(
+                                color: AppTheme.muted,
+                                fontSize: 9,
+                              ),
                             ),
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          TeamDot(team: team, size: 6),
-                          const SizedBox(width: 4),
-                          Text(
-                            team == 0 ? l10n.t('teamUs') : l10n.t('teamThem'),
-                            style: const TextStyle(
-                              color: AppTheme.muted,
-                              fontSize: 9,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -284,7 +285,9 @@ class PlayerPod extends StatelessWidget {
               SizedBox(
                 width: 72,
                 child: Text(
-                  name,
+                  bidLabel == null || bidLabel!.isEmpty
+                      ? name
+                      : '$name $bidLabel',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.center,

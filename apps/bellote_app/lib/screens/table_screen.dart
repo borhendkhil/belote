@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../net/game_client.dart';
+import '../widgets/app_logo.dart';
 import '../widgets/belote_banner.dart';
 import '../widgets/bid_panel.dart';
 import '../widgets/chat_sheet.dart';
@@ -19,6 +20,7 @@ import '../widgets/playing_card.dart';
 import '../widgets/result_overlay.dart';
 import '../widgets/rules_sheet.dart';
 import '../widgets/score_sheet.dart';
+import '../widgets/score_table.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/turn_ring.dart';
 
@@ -42,6 +44,11 @@ class _TableScreenState extends State<TableScreen> {
   int? _lastEventSeq;
   int? _lastDeal;
   bool _animateDeal = false;
+
+  /// Signature de la main déjà affichée. Quand elle change (carte jouée ou
+  /// nouvelle donne), les cartes restantes se replacent immédiatement : seul
+  /// le soulèvement au survol reste animé.
+  String _renderedHand = '';
 
   GameClient get client => widget.client;
 
@@ -438,6 +445,15 @@ class _TableScreenState extends State<TableScreen> {
       view.hand,
       view.phase == 'bidding' ? null : view.trump,
     );
+    // Quand la main change, on supprime l'animation de réagencement : les
+    // cartes restantes prennent leur nouvelle place sans glisser.
+    final signature = hand.map((card) => card.id).join(',');
+    final animateReflow = _renderedHand == signature;
+    if (!animateReflow) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _renderedHand = signature,
+      );
+    }
     if (hand.isEmpty) return const SizedBox(height: 10);
     final legal = view.legalCards.toSet();
     return Padding(
@@ -484,8 +500,10 @@ class _TableScreenState extends State<TableScreen> {
           // Ordre de rendu stable : une carte levée ne passe pas devant ses
           // voisines. Elle monte depuis l'éventail, sans créer de calque
           // « posé par-dessus » la main.
-          const movement = Duration(milliseconds: 280);
-          const movementCurve = Curves.easeOutCubic;
+          final movement =
+              animateReflow ? const Duration(milliseconds: 280) : Duration.zero;
+          final movementCurve =
+              animateReflow ? Curves.easeOutCubic : Curves.linear;
 
           Widget dealEntrance(int index, Widget child) => animateDeal
               ? _DealEntrance(
@@ -610,143 +628,145 @@ class _TopBar extends StatelessWidget {
     final code = client.code ?? client.room?.code ?? '';
     return Padding(
       padding: const EdgeInsets.fromLTRB(6, 3, 6, 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Spacer(),
-          if (code.isNotEmpty)
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: InkWell(
-                  onTap: onCopy,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.22),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 360;
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppLogo(height: compact ? 22 : 26),
+              const SizedBox(width: 4),
+              const Spacer(),
+              if (!compact && code.isNotEmpty)
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: InkWell(
+                      onTap: onCopy,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: AppTheme.gold.withValues(alpha: 0.22),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            code,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.gold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.6,
-                            ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: AppTheme.gold.withValues(alpha: 0.22),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.copy_rounded,
-                          size: 11,
-                          color: AppTheme.muted,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                code,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: AppTheme.gold,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.6,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.copy_rounded,
+                              size: 11,
+                              color: AppTheme.muted,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
+              const SizedBox(width: 2),
+              IconButton(
+                onPressed: () => showChatSheet(context, client),
+                tooltip: l10n.t('chat'),
+                icon: const Icon(Icons.forum_outlined, size: 19),
+                color: AppTheme.goldSoft,
+                visualDensity: VisualDensity.compact,
               ),
-            ),
-          const SizedBox(width: 2),
-          IconButton(
-            onPressed: () =>
-                showScoreSheet(context, client: client, view: view),
-            tooltip: l10n.t('scoreSheet'),
-            icon: const Icon(Icons.scoreboard_outlined, size: 19),
-            color: AppTheme.goldSoft,
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            onPressed: () => showChatSheet(context, client),
-            tooltip: l10n.t('chat'),
-            icon: const Icon(Icons.forum_outlined, size: 19),
-            color: AppTheme.goldSoft,
-            visualDensity: VisualDensity.compact,
-          ),
-          PopupMenuButton<String>(
-            tooltip: l10n.t('menu'),
-            icon: const Icon(
-              Icons.home_outlined,
-              size: 19,
-              color: AppTheme.goldSoft,
-            ),
-            onSelected: (value) {
-              switch (value) {
-                case 'log':
-                  showLogSheet(context, client);
-                case 'score':
-                  showScoreSheet(context, client: client, view: view);
-                case 'rules':
-                  showRulesSheet(context);
-                case 'settings':
-                  showSettingsSheet(context, client.settings);
-                case 'leave':
-                  onLeave();
-              }
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'score',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.scoreboard_outlined, size: 18),
-                  title: Text(l10n.t('scoreSheet')),
+              PopupMenuButton<String>(
+                tooltip: l10n.t('menu'),
+                icon: const Icon(
+                  Icons.home_outlined,
+                  size: 19,
+                  color: AppTheme.goldSoft,
                 ),
+                onSelected: (value) {
+                  switch (value) {
+                    case 'log':
+                      showLogSheet(context, client);
+                    case 'score':
+                      showScoreSheet(context, client: client, view: view);
+                    case 'rules':
+                      showRulesSheet(context);
+                    case 'settings':
+                      showSettingsSheet(context, client.settings);
+                    case 'leave':
+                      onLeave();
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'score',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.scoreboard_outlined, size: 18),
+                      title: Text(l10n.t('scoreSheet')),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'log',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading:
+                          const Icon(Icons.receipt_long_outlined, size: 18),
+                      title: Text(l10n.t('log')),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'rules',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.menu_book_outlined, size: 18),
+                      title: Text(l10n.t('rules')),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'settings',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.tune, size: 18),
+                      title: Text(l10n.t('settings')),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'leave',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.logout, size: 18),
+                      title: Text(l10n.t('leaveGame')),
+                    ),
+                  ),
+                ],
               ),
-              PopupMenuItem(
-                value: 'log',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.receipt_long_outlined, size: 18),
-                  title: Text(l10n.t('log')),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'rules',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.menu_book_outlined, size: 18),
-                  title: Text(l10n.t('rules')),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'settings',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.tune, size: 18),
-                  title: Text(l10n.t('settings')),
-                ),
-              ),
-              PopupMenuItem(
-                value: 'leave',
-                child: ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.logout, size: 18),
-                  title: Text(l10n.t('leaveGame')),
-                ),
-              ),
+              const SizedBox(width: 2),
+              ScoreTable(client: client, view: view, rows: compact ? 1 : 2),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -1433,13 +1453,11 @@ class _LastTrickPanel extends StatelessWidget {
                   color: AppTheme.gold.withValues(alpha: 0.2),
                 ),
               ),
+            // La couleur est déjà incluse dans le libellé du contrat : on
+            // évite d'afficher deux fois le même atout dans ce panneau.
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (view.trump != null) ...[
-                  SuitBadge(suit: view.trump!, size: 10),
-                  const SizedBox(width: 5),
-                ],
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 104),
                   child: Text(

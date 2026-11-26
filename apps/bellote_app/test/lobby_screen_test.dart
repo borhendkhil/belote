@@ -4,6 +4,7 @@ import 'package:bellote_app/core/theme.dart';
 import 'package:bellote_app/models/room_info.dart';
 import 'package:bellote_app/net/game_client.dart';
 import 'package:bellote_app/screens/lobby_screen.dart';
+import 'package:bellote_app/widgets/app_logo.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter_localizations/flutter_localizations.dart'
     hide GlobalMaterialLocalizations, GlobalCupertinoLocalizations;
@@ -85,6 +86,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    expect(find.byType(AppLogo), findsOneWidget);
     expect(
       find.text(
         'Touchez un siège puis un autre pour échanger les joueurs '

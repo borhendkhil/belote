@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../net/game_client.dart';
+import '../widgets/app_logo.dart';
 import '../widgets/common.dart';
 import '../widgets/rules_sheet.dart';
 import '../widgets/settings_sheet.dart';
@@ -95,38 +96,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ],
                       ),
                       const SizedBox(height: 10),
-                      Center(
-                        child: Container(
-                          width: 78,
-                          height: 78,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [AppTheme.goldSoft, AppTheme.gold],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppTheme.gold.withValues(alpha: 0.32),
-                                blurRadius: 26,
-                                spreadRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'B',
-                              style: TextStyle(
-                                color: AppTheme.feltDeep,
-                                fontSize: 42,
-                                fontWeight: FontWeight.w900,
-                                height: 1,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                      const Center(child: AppLogo(height: 88)),
                       const SizedBox(height: 14),
                       Text(
                         l10n.t('appTitle'),

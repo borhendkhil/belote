@@ -63,10 +63,10 @@ class ScoreSheet extends StatelessWidget {
                 Expanded(
                   child: Text(
                     l10n.t('scoreSheet'),
-                    style: const TextStyle(
+                    style: AppTheme.handwriting(
+                      size: 20,
                       color: AppTheme.cream,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
+                      weight: FontWeight.w700,
                     ),
                   ),
                 ),
@@ -95,10 +95,10 @@ class ScoreSheet extends StatelessWidget {
                 children: [
                   Text(
                     l10n.t('scoreTotals'),
-                    style: const TextStyle(
+                    style: AppTheme.handwriting(
+                      size: 13,
                       color: AppTheme.muted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
+                      weight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -116,18 +116,17 @@ class ScoreSheet extends StatelessWidget {
                               children: [
                                 Text(
                                   l10n.teamName(team, us),
-                                  style: const TextStyle(
+                                  style: AppTheme.handwriting(
+                                    size: 13,
                                     color: AppTheme.muted,
-                                    fontSize: 10,
                                   ),
                                 ),
                                 Text(
                                   '${view.setScores[team] ?? 0}',
-                                  style: TextStyle(
+                                  style: AppTheme.handwriting(
+                                    size: 26,
                                     color: teamColor(team),
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w900,
-                                    height: 1.1,
+                                    weight: FontWeight.w800,
                                   ),
                                 ),
                               ],
@@ -141,9 +140,9 @@ class ScoreSheet extends StatelessWidget {
                   Text(
                     '${l10n.t('set', {'number': view.setNumber})}'
                     '  ·  ${l10n.t('setTarget', {'target': view.setTarget})}',
-                    style: const TextStyle(
+                    style: AppTheme.handwriting(
+                      size: 13,
                       color: AppTheme.muted,
-                      fontSize: 10,
                     ),
                   ),
                 ],
@@ -154,10 +153,10 @@ class ScoreSheet extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 6),
             child: Text(
               l10n.t('scoreHistory'),
-              style: const TextStyle(
+              style: AppTheme.handwriting(
+                size: 16,
                 color: AppTheme.goldSoft,
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
+                weight: FontWeight.w700,
               ),
             ),
           ),
@@ -166,9 +165,9 @@ class ScoreSheet extends StatelessWidget {
                 ? Center(
                     child: Text(
                       l10n.t('noDealsYet'),
-                      style: const TextStyle(
+                      style: AppTheme.handwriting(
+                        size: 15,
                         color: AppTheme.muted,
-                        fontSize: 12,
                       ),
                     ),
                   )
@@ -199,20 +198,20 @@ class ScoreSheet extends StatelessWidget {
                                 l10n.t('dealShort', {
                                   'number': entry.dealNumber,
                                 }),
-                                style: const TextStyle(
+                                style: AppTheme.handwriting(
+                                  size: 15,
                                   color: AppTheme.cream,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  weight: FontWeight.w700,
                                 ),
                               ),
                             ),
                             Expanded(
                               child: Text(
                                 l10n.contractLabel(result.contract),
-                                style: const TextStyle(
+                                style: AppTheme.handwriting(
+                                  size: 15,
                                   color: AppTheme.goldSoft,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
+                                  weight: FontWeight.w700,
                                 ),
                               ),
                             ),
@@ -220,10 +219,10 @@ class ScoreSheet extends StatelessWidget {
                               '${result.pointsByTeam[us] ?? 0}'
                               ' – '
                               '${result.pointsByTeam[them] ?? 0}',
-                              style: const TextStyle(
+                              style: AppTheme.handwriting(
+                                size: 16,
                                 color: AppTheme.cream,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
+                                weight: FontWeight.w700,
                               ),
                             ),
                           ],

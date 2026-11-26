@@ -5,6 +5,7 @@ import '../core/l10n.dart';
 import '../core/theme.dart';
 import '../models/room_info.dart';
 import '../net/game_client.dart';
+import '../widgets/app_logo.dart';
 import '../widgets/chat_sheet.dart';
 import '../widgets/common.dart';
 import '../widgets/rules_sheet.dart';
@@ -173,6 +174,8 @@ class _LobbyTopBar extends StatelessWidget {
             icon: const Icon(Icons.arrow_back),
             color: AppTheme.muted,
           ),
+          const AppLogo(height: 28),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
