@@ -9,6 +9,7 @@ import 'package:bellote_app/widgets/app_logo.dart';
 import 'package:bellote_app/widgets/common.dart';
 import 'package:bellote_app/widgets/player_action_bubble.dart';
 import 'package:bellote_app/widgets/player_pod.dart';
+import 'package:bellote_app/widgets/result_overlay.dart';
 import 'package:bellote_app/widgets/score_sheet.dart';
 import 'package:bellote_app/widgets/score_table.dart';
 import 'package:bellote_app/screens/table_screen.dart';
@@ -49,6 +50,45 @@ class PlayAdvancingClient extends GameClient {
         PlayedCard(seat: previous.seat, card: card),
         ...previous.currentTrick,
       ],
+    );
+    notifyListeners();
+  }
+}
+
+/// Termine le pli après la carte jouée par le joueur.
+class TrickCompletingClient extends GameClient {
+  TrickCompletingClient({required super.settings, required this.completed});
+
+  final TrickRecord completed;
+
+  @override
+  Future<void> play(Card card, {bool belote = false}) async {
+    final previous = view!;
+    view = _playingView(
+      cards: const [],
+      currentTrick: const [],
+      lastTrick: completed,
+      tricksPlayed: previous.tricksPlayed + 1,
+    );
+    notifyListeners();
+  }
+}
+
+/// Termine la donne : le dernier pli ne doit pas être ramassé.
+class DealFinishingClient extends GameClient {
+  DealFinishingClient({required super.settings, required this.completed});
+
+  final TrickRecord completed;
+
+  @override
+  Future<void> play(Card card, {bool belote = false}) async {
+    final previous = view!;
+    view = _playingView(
+      cards: const [],
+      currentTrick: const [],
+      lastTrick: completed,
+      tricksPlayed: previous.tricksPlayed + 1,
+      phase: 'dealComplete',
     );
     notifyListeners();
   }
@@ -1082,6 +1122,13 @@ void main() {
     client.notifyListeners();
     await tester.pump();
 
+    // La quatrième carte se pose d'abord dans le pli avant le ramassage.
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNWidgets(4),
+    );
+    await tester.pump(const Duration(milliseconds: 520));
+
     final flying = find.byKey(const Key('collect-1:4-AS'));
     expect(flying, findsOneWidget);
     final flyingCard = find.descendant(
@@ -1098,6 +1145,129 @@ void main() {
       find.descendant(of: center, matching: find.byType(PlayingCard)),
       findsNothing,
     );
+  });
+
+  testWidgets('la quatrième carte du pli est lancée avant le ramassage', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(390 * 3, 844 * 3);
+    addTearDown(tester.view.reset);
+
+    const completed = TrickRecord(
+      leaderSeat: 1,
+      plays: [
+        PlayedCard(seat: 1, card: Card(Rank.seven, Suit.hearts)),
+        PlayedCard(seat: 2, card: Card(Rank.eight, Suit.hearts)),
+        PlayedCard(seat: 3, card: Card(Rank.nine, Suit.hearts)),
+        PlayedCard(seat: 0, card: Card(Rank.ace, Suit.spades)),
+      ],
+      winnerSeat: 0,
+      points: 25,
+      winningTeam: 0,
+    );
+    SharedPreferences.setMockInitialValues({'locale': 'fr'});
+    final settings = await SettingsController.load();
+    final client = TrickCompletingClient(
+      settings: settings,
+      completed: completed,
+    )
+      ..seat = 0
+      ..code = 'ABCDE'
+      ..view = _playingView(
+        cards: const [Card(Rank.ace, Suit.spades)],
+        currentTrick: completed.plays.take(3).toList(),
+        lastTrick: null,
+        tricksPlayed: 7,
+      );
+
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    Finder handCard() => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width > 50 &&
+              widget.card == const Card(Rank.ace, Suit.spades),
+        );
+    final handCenter = tester.getCenter(handCard());
+    await tester.tap(handCard());
+    await tester.pump();
+
+    Finder flyingCard() => find.byWidgetPredicate(
+          (widget) =>
+              widget is PlayingCard &&
+              widget.width == 40 &&
+              widget.card == const Card(Rank.ace, Suit.spades),
+        );
+    expect(flyingCard(), findsOneWidget);
+    expect(
+        (tester.getCenter(flyingCard()) - handCenter).distance, lessThan(20));
+    expect(find.byKey(const Key('collect-1:8-AS')), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 520));
+    expect(find.byKey(const Key('collect-1:8-AS')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('le dernier pli ouvre la feuille de score sans ramassage', (
+    tester,
+  ) async {
+    const completed = TrickRecord(
+      leaderSeat: 1,
+      plays: [
+        PlayedCard(seat: 1, card: Card(Rank.seven, Suit.hearts)),
+        PlayedCard(seat: 2, card: Card(Rank.eight, Suit.hearts)),
+        PlayedCard(seat: 3, card: Card(Rank.nine, Suit.hearts)),
+        PlayedCard(seat: 0, card: Card(Rank.ace, Suit.spades)),
+      ],
+      winnerSeat: 0,
+      points: 25,
+      winningTeam: 0,
+    );
+    SharedPreferences.setMockInitialValues({'locale': 'fr'});
+    final settings = await SettingsController.load();
+    final client = DealFinishingClient(
+      settings: settings,
+      completed: completed,
+    )
+      ..seat = 0
+      ..code = 'ABCDE'
+      ..view = _playingView(
+        cards: const [Card(Rank.ace, Suit.spades)],
+        currentTrick: completed.plays.take(3).toList(),
+        lastTrick: null,
+        tricksPlayed: 7,
+      );
+
+    await tester.pumpWidget(appFor(client));
+    await tester.pumpAndSettle();
+
+    final handCard = find.byWidgetPredicate(
+      (widget) =>
+          widget is PlayingCard &&
+          widget.width > 50 &&
+          widget.card == const Card(Rank.ace, Suit.spades),
+    );
+    await tester.tap(handCard);
+    await tester.pump();
+
+    final center = find.byKey(const Key('trick-center'));
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNWidgets(4),
+    );
+    expect(find.byType(ResultOverlay), findsNothing);
+    expect(find.byKey(const Key('collect-1:8-AS')), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 520));
+    expect(find.byType(ResultOverlay), findsOneWidget);
+    expect(find.byKey(const Key('collect-1:8-AS')), findsNothing);
+    expect(
+      find.descendant(of: center, matching: find.byType(PlayingCard)),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('le centre ne garde que le pli, les infos vont dans les coins', (
@@ -1165,11 +1335,14 @@ void main() {
         find.descendant(of: glow, matching: find.text(symbols[seat])),
         findsOneWidget,
       );
-      final container = tester.widget<Container>(
-        find.descendant(of: glow, matching: find.byType(Container)),
+      final text = tester.widget<Text>(
+        find.descendant(of: glow, matching: find.text(symbols[seat])),
       );
-      final decoration = container.decoration! as BoxDecoration;
-      expect(decoration.color, Colors.white.withValues(alpha: 0.08));
+      expect(text.style?.color, const Color(0x47FFFFFF));
+      expect(
+        find.descendant(of: glow, matching: find.byType(Container)),
+        findsNothing,
+      );
     }
     expect(
       find.descendant(of: center, matching: find.byType(ImageFiltered)),

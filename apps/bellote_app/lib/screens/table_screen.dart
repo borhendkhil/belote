@@ -65,6 +65,12 @@ class _TableScreenState extends State<TableScreen> {
   bool _animateDeal = false;
   Timer? _dealAnimationTimer;
 
+  /// La feuille de score du dernier pli n'apparaît qu'une fois la dernière
+  /// carte posée, sans attendre une animation de ramassage.
+  Timer? _resultDelayTimer;
+  int? _pendingResultDeal;
+  String? _lastPhase;
+
   /// Signature de la main déjà affichée. Quand elle change (carte jouée ou
   /// nouvelle donne), les cartes restantes se replacent immédiatement : seul
   /// le soulèvement au survol reste animé.
@@ -72,6 +78,11 @@ class _TableScreenState extends State<TableScreen> {
   List<String> _lastHandIds = [];
   double _lastHandCenter = 0;
   double _lastCardWidth = 0;
+
+  /// Hauteur réservée par l'éventail avant qu'il ne soit vidé : sans elle, le
+  /// centre du tapis descendrait au moment où la dernière carte est jouée et
+  /// le lancer démarrerait sous la main au lieu de partir de la carte.
+  double _lastHandHeight = 0;
 
   /// Clés stables des cartes de l'éventail, pour relever leur position réelle
   /// au moment où le serveur retire une carte jouée de la main.
@@ -86,6 +97,7 @@ class _TableScreenState extends State<TableScreen> {
     super.initState();
     _lastEventSeq = widget.client.view?.eventSeq;
     _lastDeal = widget.client.view?.dealsStarted;
+    _lastPhase = widget.client.view?.phase;
     widget.client.addListener(_onClientChanged);
   }
 
@@ -95,11 +107,15 @@ class _TableScreenState extends State<TableScreen> {
     if (oldWidget.client != widget.client) {
       oldWidget.client.removeListener(_onClientChanged);
       _dealAnimationTimer?.cancel();
+      _resultDelayTimer?.cancel();
       _animateDeal = false;
       _lastPlayOrigin = null;
       _lastHandIds = const [];
+      _lastHandHeight = 0;
+      _pendingResultDeal = null;
       _lastEventSeq = widget.client.view?.eventSeq;
       _lastDeal = widget.client.view?.dealsStarted;
+      _lastPhase = widget.client.view?.phase;
       widget.client.addListener(_onClientChanged);
     }
   }
@@ -108,6 +124,7 @@ class _TableScreenState extends State<TableScreen> {
   void dispose() {
     widget.client.removeListener(_onClientChanged);
     _dealAnimationTimer?.cancel();
+    _resultDelayTimer?.cancel();
     _announcementTimer?.cancel();
     for (final timer in _bubbleTimers.values) {
       timer.cancel();
@@ -120,6 +137,20 @@ class _TableScreenState extends State<TableScreen> {
   void _onClientChanged() {
     final view = widget.client.view;
     if (view == null) return;
+    final previousPhase = _lastPhase;
+    _lastPhase = view.phase;
+    // La dernière carte doit pouvoir se poser avant que la feuille de score
+    // n'apparaisse ; aucun ramassage n'est joué pour le dernier pli.
+    if (previousPhase == 'playing' &&
+        view.isDealComplete &&
+        view.lastTrick != null) {
+      _resultDelayTimer?.cancel();
+      _pendingResultDeal = view.dealsStarted;
+      _resultDelayTimer = Timer(_throwDuration, () {
+        if (!mounted) return;
+        setState(() => _pendingResultDeal = null);
+      });
+    }
     // On n'anime que les vraies nouvelles donnes : un écran qui s'ouvre sur
     // une partie déjà en cours affiche directement l'éventail en place.
     final newDeal = _lastDeal != null && view.dealsStarted != _lastDeal;
@@ -129,6 +160,8 @@ class _TableScreenState extends State<TableScreen> {
     }
     if (newDeal) {
       _lastPlayOrigin = null;
+      _resultDelayTimer?.cancel();
+      _pendingResultDeal = null;
       _dealAnimationTimer?.cancel();
       _animateDeal = true;
       // L'animation de distribution ne joue qu'une fois par donne. Sans ce
@@ -215,7 +248,7 @@ class _TableScreenState extends State<TableScreen> {
   /// réelle avant que l'éventail ne soit reconstruit. Couvre aussi la carte
   /// jouée automatiquement par le serveur à l'échéance du timer.
   HandPlayOrigin? _playedHandOrigin(PlayerView view) {
-    if (_lastHandIds.isEmpty || view.phase != 'playing') return null;
+    if (_lastHandIds.isEmpty) return null;
     final remaining = view.hand.map((card) => card.id).toSet();
     final removed =
         _lastHandIds.where((id) => !remaining.contains(id)).toList();
@@ -354,8 +387,9 @@ class _TableScreenState extends State<TableScreen> {
           return _buildWaiting(context);
         }
         final l10n = L10n.of(context);
-        final showResult =
-            view.isDealComplete && _dismissedDeal != view.dealsStarted;
+        final showResult = view.isDealComplete &&
+            _dismissedDeal != view.dealsStarted &&
+            _pendingResultDeal != view.dealsStarted;
         final matchOver = view.matchWinner != null;
 
         return Scaffold(
@@ -520,7 +554,7 @@ class _TableScreenState extends State<TableScreen> {
     // cartes restantes prennent leur nouvelle place sans glisser.
     final signature = hand.map((card) => card.id).join(',');
     final animateReflow = _renderedHand == signature;
-    if (hand.isEmpty) return const SizedBox(height: 10);
+    if (hand.isEmpty) return SizedBox(height: _lastHandHeight);
     final legal = view.legalCards.toSet();
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
@@ -558,6 +592,7 @@ class _TableScreenState extends State<TableScreen> {
               _lastHandIds = hand.map((card) => card.id).toList();
               _lastHandCenter = center;
               _lastCardWidth = cardWidth;
+              _lastHandHeight = fanHeight + 4;
             });
           }
 
@@ -1008,6 +1043,12 @@ class _TrickAreaState extends State<_TrickArea> {
   /// Évite de rejouer l'envol du même pli si le serveur renvoie plusieurs états.
   final Set<String> _seenTricks = {};
 
+  /// Dernière carte en vol avant que le pli ne soit ramassé. On attend la fin
+  /// du lancer pour que la quatrième carte soit réellement vue au centre.
+  Timer? _pendingTimer;
+  _TrickFlight? _pendingFlight;
+  bool _pendingSkipCollection = false;
+
   String _trickKey(PlayerView view) =>
       '${view.dealsStarted}:${view.tricksPlayed}';
 
@@ -1027,13 +1068,45 @@ class _TrickAreaState extends State<_TrickArea> {
   }
 
   @override
+  void dispose() {
+    _pendingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _cancelPending() {
+    _pendingTimer?.cancel();
+    _pendingTimer = null;
+    _pendingFlight = null;
+    _pendingSkipCollection = false;
+  }
+
+  void _startPending(_TrickFlight flight, {required bool skipCollection}) {
+    _cancelPending();
+    _pendingFlight = flight;
+    _pendingSkipCollection = skipCollection;
+    _pendingTimer = Timer(_throwDuration, () {
+      if (!mounted) return;
+      setState(() {
+        if (!_pendingSkipCollection && _pendingFlight != null) {
+          _flights.add(_pendingFlight!);
+        }
+        _floor = const [];
+        _pendingFlight = null;
+        _pendingTimer = null;
+      });
+    });
+  }
+
+  @override
   void didUpdateWidget(covariant _TrickArea oldWidget) {
     super.didUpdateWidget(oldWidget);
     final view = widget.view;
     final previous = oldWidget.view;
+    final leftPlay = previous.phase == 'playing' && view.phase != 'playing';
     if (view.dealsStarted != previous.dealsStarted ||
         view.tricksPlayed < previous.tricksPlayed ||
-        view.phase != 'playing') {
+        (leftPlay && view.lastTrick == null)) {
+      _cancelPending();
       setState(() {
         _floor = List.of(view.currentTrick);
         _flights.clear();
@@ -1044,21 +1117,39 @@ class _TrickAreaState extends State<_TrickArea> {
       return;
     }
 
+    if (_pendingFlight != null) {
+      // Un nouvel état du même pli arrive pendant le lancer : on laisse les
+      // cartes déjà en vol terminer leur trajet.
+      if (view.tricksPlayed == previous.tricksPlayed &&
+          view.dealsStarted == previous.dealsStarted) {
+        return;
+      }
+      _cancelPending();
+    }
+
     final key = _trickKey(view);
     final trick = view.lastTrick;
-    final completed = view.tricksPlayed > previous.tricksPlayed &&
+    // Le dernier pli de la donne ne doit pas être ramassé : la feuille de score
+    // s'ouvre dès que la dernière carte est posée.
+    final dealFinished = leftPlay && view.isDealComplete && trick != null;
+    final completed = !dealFinished &&
+        view.tricksPlayed > previous.tricksPlayed &&
         trick != null &&
         _seenTricks.add(key);
-    if (completed) {
-      _flights.add(
-        _TrickFlight(
-          id: key,
-          plays: List.of(trick.plays),
-          winnerSeat: view.lastTrickWinnerSeat ?? trick.winnerSeat,
-        ),
+    if (dealFinished || completed) {
+      if (dealFinished) _seenTricks.add(key);
+      final flight = _TrickFlight(
+        id: key,
+        plays: List.of(trick.plays),
+        winnerSeat: view.lastTrickWinnerSeat ?? trick.winnerSeat,
       );
+      // On garde les quatre cartes au centre le temps du dernier lancer, puis
+      // seulement on déclenche le ramassage.
+      setState(() => _floor = List.of(trick.plays));
+      _startPending(flight, skipCollection: dealFinished);
+      return;
     }
-    if (completed || !_sameCards(_floor, view.currentTrick)) {
+    if (!_sameCards(_floor, view.currentTrick)) {
       setState(() => _floor = List.of(view.currentTrick));
     }
   }
@@ -1099,40 +1190,26 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : quatre emplacements aux couleurs des cartes, légèrement
-    // transparents et sans flou, à la place des anciens emplacements vides.
+    // Fond du tapis : uniquement les quatre enseignes, en blanc légèrement
+    // transparent, sans carré ni flou.
     const suitSlots = <Suit>[
       Suit.hearts,
       Suit.spades,
       Suit.diamonds,
       Suit.clubs,
     ];
-    Widget cardGlow(int seat, Alignment alignment) {
-      final suit = suitSlots[(seat - me + 4) % suitSlots.length];
-      final ink = suit.isRed ? AppTheme.red : AppTheme.ink;
-      return Align(
-        key: ValueKey('card-glow-$seat'),
-        alignment: alignment,
-        child: Container(
-          width: 34,
-          height: 46,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Center(
-            child: Text(
-              suit.symbol,
-              style: TextStyle(
-                color: ink.withValues(alpha: 0.45),
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-              ),
+    Widget cardGlow(int seat, Alignment alignment) => Align(
+          key: ValueKey('card-glow-$seat'),
+          alignment: alignment,
+          child: Text(
+            suitSlots[(seat - me + 4) % suitSlots.length].symbol,
+            style: const TextStyle(
+              color: Color(0x47FFFFFF),
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ),
-      );
-    }
+        );
 
     Widget slot(PlayedCard play, Alignment alignment) {
       var from = _entryOffset(play.seat, me);
