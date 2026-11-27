@@ -1316,7 +1316,7 @@ void main() {
     }
   });
 
-  testWidgets('le centre affiche quatre enseignes blanches', (
+  testWidgets('le centre affiche un filigrane Belote écrit à la main', (
     tester,
   ) async {
     final client = await makeClient();
@@ -1325,28 +1325,29 @@ void main() {
     await tester.pumpAndSettle();
 
     final center = find.byKey(const Key('trick-center'));
-    const symbols = <String>['♥', '♠', '♦', '♣'];
+    expect(find.byKey(const Key('trick-watermark')), findsOneWidget);
+    final text = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const Key('trick-watermark')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(text.data, 'Belote');
+    expect(text.style?.fontFamily, AppTheme.handwritingFont);
+    expect(text.style?.fontSize, 36);
+    expect(text.style?.color, const Color(0x8AFFFFFF));
+
     for (var seat = 0; seat < 4; seat++) {
-      final glow = find.byKey(Key('card-glow-$seat'));
-      expect(glow, findsOneWidget);
-      expect(
-        find.descendant(of: glow, matching: find.text(symbols[seat])),
-        findsOneWidget,
-      );
-      final text = tester.widget<Text>(
-        find.descendant(of: glow, matching: find.text(symbols[seat])),
-      );
-      expect(text.style?.color, Colors.white);
-      expect(
-        find.descendant(of: glow, matching: find.byType(Container)),
-        findsNothing,
-      );
+      expect(find.byKey(Key('card-glow-$seat')), findsNothing);
     }
+    expect(
+      find.descendant(of: center, matching: find.byType(CustomPaint)),
+      findsNothing,
+    );
     expect(
       find.descendant(of: center, matching: find.byType(ImageFiltered)),
       findsNothing,
     );
-    expect(find.descendant(of: center, matching: find.text('B')), findsNothing);
     expect(find.byKey(const Key('slot-empty-0')), findsNothing);
   });
 

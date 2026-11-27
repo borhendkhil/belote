@@ -1190,23 +1190,17 @@ class _TrickAreaState extends State<_TrickArea> {
           ),
         );
 
-    // Fond du tapis : uniquement les quatre enseignes, en blanc, sans carré
-    // ni flou.
-    const suitSlots = <Suit>[
-      Suit.hearts,
-      Suit.spades,
-      Suit.diamonds,
-      Suit.clubs,
-    ];
-    Widget cardGlow(int seat, Alignment alignment) => Align(
-          key: ValueKey('card-glow-$seat'),
-          alignment: alignment,
+    // Filigrane du tapis : un seul mot « Belote », écrit à la main et légère-
+    // ment transparent. Aucune enseigne colorée, aucun carré, aucun flou.
+    Widget centerWatermark() => const Center(
+          key: ValueKey('trick-watermark'),
           child: Text(
-            suitSlots[(seat - me + 4) % suitSlots.length].symbol,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
+            'Belote',
+            style: TextStyle(
+              fontFamily: AppTheme.handwritingFont,
+              color: Color(0x8AFFFFFF),
+              fontSize: 36,
+              fontWeight: FontWeight.w600,
             ),
           ),
         );
@@ -1266,8 +1260,7 @@ class _TrickAreaState extends State<_TrickArea> {
           key: const Key('trick-center'),
           clipBehavior: Clip.none,
           children: [
-            for (final entry in positions.entries)
-              cardGlow(entry.key, entry.value),
+            centerWatermark(),
             for (final play in plays)
               slot(play, positions[play.seat] ?? Alignment.center),
             for (final flight in _flights)
